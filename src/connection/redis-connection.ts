@@ -13,7 +13,12 @@ import {
   type RedisDurability,
   type RedisDurabilityOptOut,
 } from "./durability.js";
-import { settingsOfEnvironment, type RedisConnectionSettings } from "./settings.js";
+import { deploymentProblemsOfServer, requireOnePrimary } from "./deployment.js";
+import {
+  DEFAULT_KEY_PREFIX,
+  settingsOfEnvironment,
+  type RedisConnectionSettings,
+} from "./settings.js";
 
 /** The client of one application instance (node-redis, RESP2 replies). */
 export type RedisClient = ReturnType<typeof createClient>;
@@ -75,17 +80,21 @@ function clientOf(url: string): RedisClient {
   environmentFields: {
     redisUrl: EnvironmentField.Secret,
     redisDurabilityOptOut: EnvironmentField.OptionalText,
+    redisKeyPrefix: EnvironmentField.OptionalText,
   },
 })
 export class RedisConnection implements OnInit, OnDestroy {
   /** The instance's client: every store's commands and scripts. */
   readonly client: RedisClient;
+  /** What every key of the stores starts with (`redisKeyPrefix`, default `agboss:`). */
+  readonly keyPrefix: string;
   readonly #optOut: RedisDurabilityOptOut | undefined;
 
   constructor(source: ApplicationContext | RedisConnectionSettings) {
     const settings =
       source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
     this.#optOut = settings.durabilityOptOut;
+    this.keyPrefix = settings.keyPrefix ?? DEFAULT_KEY_PREFIX;
     this.client = clientOf(settings.url);
   }
 
@@ -100,15 +109,27 @@ export class RedisConnection implements OnInit, OnDestroy {
     return requireDurability(problems, this.#optOut);
   }
 
+  /**
+   * The server is one primary (`INFO replication` / `cluster`): rejects with
+   * `RedisDeploymentError` for a replica, a cluster, or an `INFO` it may not read. No opt-out.
+   */
+  async deployment(): Promise<void> {
+    requireOnePrimary(await deploymentProblemsOfServer((section) => this.client.info(section)));
+  }
+
   /** One `PING`: every Redis store's `ping()`. Rejects when the server does not answer. */
   async ping(): Promise<void> {
     await this.client.ping();
   }
 
-  /** Connects, then the start check: a server that can lose an acknowledged write is refused. */
+  /**
+   * Connects, then the start checks: a server that is not one primary, or that can lose an
+   * acknowledged write, is refused.
+   */
   async onInit(): Promise<void> {
     await this.client.connect();
     try {
+      await this.deployment();
       await this.durability();
     } catch (error) {
       await this.onDestroy();

@@ -2,21 +2,32 @@ import { RedisDurabilityError } from "../errors.js";
 
 /**
  * The durability the coordination stores rest on. A lease's epoch, a rate-limit window, a queued
- * child are acknowledged to the caller; if the server loses one in a crash, a second worker can
- * take a tree the first still moves. Redis keeps an acknowledged write across a crash only with
- * the append-only file (`appendonly yes`) synced on every write (`appendfsync always`). It cannot
- * keep it across a failover to an asynchronous replica — no setting here fixes that; the README
- * requires a deployment without automatic failover.
+ * child are acknowledged to the caller; if the server loses one, a second worker can take a tree
+ * the first still moves. Redis keeps an acknowledged write across a crash only with the
+ * append-only file (`appendonly yes`) synced on every write (`appendfsync always`), during a
+ * rewrite too (`no-appendfsync-on-rewrite no`), and keeps every key only when it never evicts one
+ * (`maxmemory-policy noeviction`: a full server refuses writes instead of dropping a lease and
+ * starting its epoch again at 1). It cannot keep a write across a failover to an asynchronous
+ * replica — no setting fixes that; the README requires one durable primary and no automatic
+ * failover, and `deployment.ts` refuses a replica and a cluster.
  */
 
 /** The only opt-out: its value names the guarantee given up. */
 export enum RedisDurabilityOptOut {
-  /** Start on a server that can lose an acknowledged write (no AOF, or not fsynced each write). */
+  /**
+   * Start on a server that can lose an acknowledged write: no AOF, not fsynced on each write or
+   * during a rewrite, or one that may evict keys.
+   */
   AcknowledgedWritesMayBeLost = "acknowledged-writes-may-be-lost",
 }
 
 /** The server settings the check reads. */
-export const DURABILITY_PARAMETERS = ["appendonly", "appendfsync"] as const;
+export const DURABILITY_PARAMETERS = [
+  "appendonly",
+  "appendfsync",
+  "no-appendfsync-on-rewrite",
+  "maxmemory-policy",
+] as const;
 
 /** What the start check found: the problems (empty when durable), and whether they were accepted. */
 export interface RedisDurability {
@@ -30,20 +41,42 @@ export type ConfigGet = (parameter: string) => Promise<Readonly<Record<string, s
 
 const shown = (value: string | undefined): string => value ?? "unset";
 
-/** Each durability setting of `config` (`CONFIG GET` replies merged) that falls short. */
+/** One required setting: its name, the value it must have, and what is lost without it. */
+interface Required {
+  readonly name: (typeof DURABILITY_PARAMETERS)[number];
+  readonly value: string;
+  readonly loss: string;
+}
+
+const REQUIRED: readonly Required[] = [
+  {
+    name: "appendonly",
+    value: "yes",
+    loss: "without the append-only file a crash loses every write since the last snapshot",
+  },
+  {
+    name: "appendfsync",
+    value: "always",
+    loss: "a write acknowledged before its fsync is lost in a crash",
+  },
+  {
+    name: "no-appendfsync-on-rewrite",
+    value: "no",
+    loss: "during an AOF rewrite the writes are acknowledged without an fsync",
+  },
+  {
+    name: "maxmemory-policy",
+    value: "noeviction",
+    loss: "under memory pressure the server may evict a lease key, and its fencing epoch starts again at 1",
+  },
+];
+
+/** Each durability setting of `config` (`CONFIG GET` replies merged) that falls short, in order. */
 export function durabilityProblemsOf(config: Readonly<Record<string, string>>): string[] {
-  const problems: string[] = [];
-  const appendonly = config.appendonly?.toLowerCase();
-  if (appendonly !== "yes")
-    problems.push(
-      `appendonly is ${shown(appendonly)}: without the append-only file a crash loses every write since the last snapshot — set appendonly yes`,
-    );
-  const appendfsync = config.appendfsync?.toLowerCase();
-  if (appendfsync !== "always")
-    problems.push(
-      `appendfsync is ${shown(appendfsync)}: a write acknowledged before its fsync is lost in a crash — set appendfsync always`,
-    );
-  return problems;
+  return REQUIRED.flatMap(({ name, value, loss }) => {
+    const found = config[name]?.toLowerCase();
+    return found === value ? [] : [`${name} is ${shown(found)}: ${loss} — set ${name} ${value}`];
+  });
 }
 
 /**
@@ -59,7 +92,7 @@ export async function durabilityProblemsOfServer(configGet: ConfigGet): Promise<
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return [
-      `CONFIG GET appendonly/appendfsync failed (${reason}): the durability cannot be verified — allow CONFIG GET for the stores' user`,
+      `CONFIG GET ${DURABILITY_PARAMETERS.join(", ")} failed (${reason}): the durability cannot be verified — allow CONFIG GET for the stores' user`,
     ];
   }
 }

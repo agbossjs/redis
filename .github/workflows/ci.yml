@@ -10,23 +10,31 @@ permissions:
 
 jobs:
   check:
-    name: check (Redis 7 with appendonly + appendfsync always, @agboss/core at the pinned SHA)
+    name: check (Redis 7 durable primary, @agboss/core at the pinned SHA)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
-      # a durable Redis (the stores' required settings) and one with the defaults (the start check
-      # must refuse it); the integration tests fail in CI without them, never skip
+      # a durable primary (the stores' required settings), one with the defaults and a replica of
+      # the durable one (the start checks must refuse both); the integration tests fail in CI
+      # without them, never skip
       AGBOSS_REDIS_TEST_URL: redis://localhost:6379
       AGBOSS_REDIS_WEAK_TEST_URL: redis://localhost:6380
+      AGBOSS_REDIS_REPLICA_TEST_URL: redis://localhost:6381
+      AGBOSS_REDIS_CRASH_CONTAINER: redis-durable
     steps:
       - uses: actions/checkout@v4
 
       # a service container cannot take a command (--appendonly yes): the servers start here,
-      # booting while the install runs
-      - name: Start Redis 7 (durable on 6379, defaults on 6380)
+      # booting while the install runs; the crash test kills and restarts redis-durable itself
+      - name: Start Redis 7 (durable on 6379, defaults on 6380, a replica on 6381)
         run: |
-          docker run -d --name redis-durable -p 6379:6379 redis:7 redis-server --appendonly yes --appendfsync always
+          docker network create redis-net
+          docker run -d --name redis-durable --network redis-net -p 6379:6379 redis:7 \
+            redis-server --appendonly yes --appendfsync always --no-appendfsync-on-rewrite no \
+            --maxmemory-policy noeviction
           docker run -d --name redis-weak -p 6380:6379 redis:7
+          docker run -d --name redis-replica --network redis-net -p 6381:6379 redis:7 \
+            redis-server --replicaof redis-durable 6379 --appendonly yes --appendfsync always
 
       - name: Resolve the pinned framework SHA
         id: pin
@@ -56,16 +64,20 @@ jobs:
 
       - name: Wait for Redis
         run: |
-          for server in redis-durable redis-weak; do
+          for server in redis-durable redis-weak redis-replica; do
             for attempt in $(seq 1 60); do
               [ "$(docker exec "$server" redis-cli ping)" = "PONG" ] && break
               sleep 1
             done
           done
           docker exec redis-durable redis-cli config get appendfsync
+          docker exec redis-replica redis-cli info replication | grep role
 
-      - name: Check (format, suppressions, installs, lint, types, tests with coverage, API report)
+      - name: Check (format, suppressions, installs, types, lint, tests with coverage, API report)
         run: npm run check
+
+      - name: The crash test (kills redis-durable with SIGKILL and starts it again)
+        run: npm run test:crash
 
       - name: Coverage summary
         if: always()
@@ -73,3 +85,59 @@ jobs:
           if [ -f coverage/coverage-summary.json ]; then
             node -e "const t=require('./coverage/coverage-summary.json').total;console.log('| | % |\n|---|---|\n'+['lines','branches','functions','statements'].map(k=>'| '+k+' | '+t[k].pct+' |').join('\n'))" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  faults:
+    name: faults ${{ matrix.shard }}/2 (the fault suite, the Redis queue and rate limits beside SQLite fencing)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      AGBOSS_REDIS_TEST_URL: redis://localhost:6379
+      AGBOSS_FAULT_SHARD: ${{ matrix.shard }}/2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Redis 7 (a durable primary)
+        run: |
+          docker run -d --name redis-durable -p 6379:6379 redis:7 \
+            redis-server --appendonly yes --appendfsync always --no-appendfsync-on-rewrite no \
+            --maxmemory-policy noeviction
+
+      - name: Resolve the pinned framework SHA
+        id: pin
+        run: echo "sha=$(node -p "require('./.agboss-version.json').frameworkSha")" >> "$GITHUB_OUTPUT"
+
+      - name: Check out agbossjs/agboss at the pinned SHA
+        uses: actions/checkout@v4
+        with:
+          repository: agbossjs/agboss
+          ref: ${{ steps.pin.outputs.sha }}
+          path: .agboss-source
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Pack @agboss/core at the pinned SHA and install the tarball
+        env:
+          AGBOSS_REPO_DIR: .agboss-source
+        run: |
+          npm run pack:framework
+          npm run install:packed
+
+      - name: Wait for Redis
+        run: |
+          for attempt in $(seq 1 60); do
+            [ "$(docker exec redis-durable redis-cli ping)" = "PONG" ] && break
+            sleep 1
+          done
+
+      - name: The fault suite
+        run: npm run test:faults

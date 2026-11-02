@@ -6,8 +6,13 @@
  */
 import { createClient } from "@redis/client";
 import { afterAll, describe, expect, it } from "vitest";
-import { RedisConnection, RedisDurabilityError, RedisDurabilityOptOut } from "../../src/index.js";
-import { DURABLE_URL, WEAK_URL } from "../support/server.js";
+import {
+  RedisConnection,
+  RedisDeploymentError,
+  RedisDurabilityError,
+  RedisDurabilityOptOut,
+} from "../../src/index.js";
+import { DURABLE_URL, REPLICA_URL, WEAK_URL } from "../support/server.js";
 
 const SKIPPED =
   "(skipped: AGBOSS_REDIS_TEST_URL is not set — runs in CI on redis:7 --appendonly yes --appendfsync always)";
@@ -103,3 +108,26 @@ describe.skipIf(WEAK_URL === "")(
     });
   },
 );
+
+/**
+ * agbossjs/agboss#693 AC4 — one durable primary: a replica is refused at start with
+ * `RedisDeploymentError`, whatever its durability settings and whatever the opt-out says (CI starts
+ * one with `--replicaof` the durable server; locally, without `AGBOSS_REDIS_REPLICA_TEST_URL`, this
+ * is skipped).
+ */
+describe.skipIf(REPLICA_URL === "")("agbossjs/agboss#693 AC4: a replica is refused", () => {
+  it("onInit fails with RedisDeploymentError naming the role, even with the durability opt-out", async () => {
+    const connection = new RedisConnection({
+      url: REPLICA_URL,
+      durabilityOptOut: RedisDurabilityOptOut.AcknowledgedWritesMayBeLost,
+    });
+    const failure: unknown = await connection.onInit().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    if (!(failure instanceof RedisDeploymentError)) throw new Error("expected the named error");
+    expect(failure.problems).toEqual([expect.stringMatching(/^the server's role is slave: /u)]);
+    expect(connection.client.isOpen).toBe(false);
+  });
+});

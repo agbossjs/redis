@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": ["tests/fixtures", "tests/layout", ".agboss/types.d.ts"]
+}
