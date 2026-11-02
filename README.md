@@ -151,7 +151,7 @@ npm run test:crash                                           # kills the test se
   lease store (every schedule of two instances 8 steps deep, 200 seeded walks of three, the second
   clock ± lease/2, ± lease, ± 10 × lease, both #520 races).
 - `tests/contracts/sabotage.test.ts` — the suites bite on Redis: leases on the caller's clock fail
-  the explorer's `one-live-holder`; a take made of a read and a write fails the two take races.
+  the explorer's `one-live-holder`; a take made of a read and a write fails the three take races.
 - `tests/faults/` — the core's fault suite (23 scenarios, linearizability included) with the Redis
   queue and rate limits beside the core's SQLite fencing set.
 - `tests/crash/` — `docker kill -s KILL` on the server: with the required settings every epoch

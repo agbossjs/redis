@@ -8,7 +8,7 @@ import { startVitest } from "vitest/node";
  * (fixtures/sabotage-stores.ts) run through `storeConformance` in a vitest of their own, and each
  * fails what it breaks. Leases decided on the caller's clock (the client sends its own time, not the
  * server's `TIME`) fail the explorer's `one-live-holder`; a take made of a read and then a write
- * (two round trips, not one script) fails the lease contract's two take races (agbossjs/agboss#697) on every run. The third
+ * (two round trips, not one script) fails the lease contract's three take races (agbossjs/agboss#695) on every run. The third
  * sabotage — a server without fsync claiming durability — is refused at start
  * (tests/integration/durability-crash.test.ts shows what it loses).
  */
@@ -69,7 +69,7 @@ describe("agbossjs/agboss#693 AC3: the suites bite on broken Redis lease stores"
     expect(failed.map((one) => one.error).join("\n")).toContain("minimal schedule");
   });
 
-  it("a take made of a read and a write: the lease contract's two take races fail", () => {
+  it("a take made of a read and a write: the lease contract's three take races fail", () => {
     const failed = found.filter(
       (one) =>
         one.suites.some((suite) => suite.includes("Redis leases taken by a read, then a write")) &&
@@ -78,12 +78,14 @@ describe("agbossjs/agboss#693 AC3: the suites bite on broken Redis lease stores"
     // both take races, every run; under load a case whose own steps race two calls may fail too
     // (the store is broken there as well) — never a case of one call at a time
     expect(failed.map((one) => one.name)).toEqual(
-      expect.arrayContaining([
-        "#697: two instances take one free tree at once: exactly one gets it, at epoch 1",
-        "#697: two instances take one expired lease at once: exactly one gets it, at epoch 2",
-      ]),
+      expect.arrayContaining(
+        ["never leased", "released", "expired"].map(
+          (how) =>
+            `#695: two instances take one ${how} lease at once, round after round, in both orders: exactly one is given it, at the next epoch`,
+        ),
+      ),
     );
-    expect(failed.length).toBeLessThanOrEqual(4);
+    expect(failed.length).toBeLessThanOrEqual(5);
   });
 
   it("the sound parts of both still pass: only what they break fails", () => {
