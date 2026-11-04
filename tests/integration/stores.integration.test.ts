@@ -3,13 +3,13 @@
  * the server's own `TIME` in production (agbossjs/agboss#533 clock authority — a store clock whose
  * `now()` is decades off changes nothing), a lease key never expires and its epoch never starts
  * over, a script dropped from the server's cache (`SCRIPT FLUSH`, a restart) runs again from its
- * source, the rate-limit keys expire by themselves, and the start checks pass on one durable
- * primary.
+ * source, the rate-limit keys expire by themselves, the queue's depth forgets a running child whose
+ * tree ended (agbossjs/agboss#485), and the start checks pass on one durable primary.
  */
-import { StoreClock } from "@agboss/core";
+import { ExecutionRecordStatus, StoreClock, type QueuedChildExecution } from "@agboss/core";
 import { seconds } from "@agboss/core/units";
 import { afterAll, describe, expect, it } from "vitest";
-import { RedisRateLimitRepository } from "../../src/index.js";
+import { RedisChildExecutionQueueRepository, RedisRateLimitRepository } from "../../src/index.js";
 import { keyOf } from "../../src/connection/scripts.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import {
@@ -120,6 +120,44 @@ describe.skipIf(DURABLE_URL === "")(
         );
         expect(ttl).toBeGreaterThan(0);
       }
+    });
+
+    it("agbossjs/agboss#485: a running child whose tree is deleted is no longer counted", async () => {
+      const connection = await connectionOf(space);
+      space.idle.push(connection);
+      const clock = {
+        now: () => new Date(),
+        sleep: () => Promise.resolve(),
+        monotonicNow: () => 0,
+      };
+      const queue = new RedisChildExecutionQueueRepository(
+        connection,
+        clock,
+        new TestApplicationContext({}),
+      );
+      const child = (executionId: string, rootExecutionId: string): QueuedChildExecution => ({
+        ...{
+          tenantId: "default",
+          executionId,
+          rootExecutionId,
+          parentExecutionId: rootExecutionId,
+        },
+        ...{ rootWorkflow: "root-workflow", workflow: "child-workflow", depth: 2, run: "{}" },
+        ...{ status: ExecutionRecordStatus.Queued, queuedAt: new Date() },
+      });
+      await queue.saveIfAbsent(child("running-1", "ended-root"));
+      await queue.saveIfAbsent(child("running-2", "live-root"));
+      await queue.claimFirstByStatusQueuedOrderByDepthDesc();
+      await queue.claimFirstByStatusQueuedOrderByDepthDesc();
+      expect((await queue.findQueueDepth()).running).toBe(2);
+
+      await queue.deleteAllByTenantIdAndRootExecutionId("default", "ended-root");
+
+      expect(await queue.findQueueDepth()).toEqual({
+        queued: 0,
+        running: 1,
+        oldestQueuedAt: undefined,
+      });
     });
 
     it("the start checks pass on one durable primary", async () => {

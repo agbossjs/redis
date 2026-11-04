@@ -10,11 +10,11 @@ MongoDB (agbossjs/agboss#527, #693).
 
 ## The stores
 
-| Contract                        | Store                                      | How it maps to Redis                                                                                                        |
-| ------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `ExecutionLeaseRepository`      | `RedisExecutionLeaseRepository` (abstract) | one hash per tree; every operation one Lua script; expiry by the server's `TIME` inside the script; epochs only grow        |
-| `ChildExecutionQueueRepository` | `RedisChildExecutionQueueRepository`       | a hash per child, one sorted set of the queued (deepest first, then longest waiting); save, claim, complete each one script |
-| `RateLimitRepository`           | `RedisRateLimitRepository`                 | slots a sorted set (slot → its end), windows a sorted set and a hash, pauses a string — each operation one script           |
+| Contract                        | Store                                      | How it maps to Redis                                                                                                                                                                                                                   |
+| ------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ExecutionLeaseRepository`      | `RedisExecutionLeaseRepository` (abstract) | one hash per tree; every operation one Lua script; expiry by the server's `TIME` inside the script; epochs only grow                                                                                                                   |
+| `ChildExecutionQueueRepository` | `RedisChildExecutionQueueRepository`       | a hash per child, one sorted set of the queued (deepest first, then longest waiting); save, claim, complete each one script; the depth (`findQueueDepth`) one script over the queued by time and the running, kept by the same scripts |
+| `RateLimitRepository`           | `RedisRateLimitRepository`                 | slots a sorted set (slot → its end), windows a sorted set and a hash, pauses a string — each operation one script                                                                                                                      |
 
 Why these and no other: the core's one-backend rule (#526) binds the fenced-effect and outbound-call
 stores to the lease store; rate limits, the queue and the lease log are on any backend. Of those,

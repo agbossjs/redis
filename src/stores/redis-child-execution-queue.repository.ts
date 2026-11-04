@@ -5,12 +5,20 @@ import {
   ExecutionRecordStatus,
   Injectable,
   type ChildExecutionEnd,
+  type ChildExecutionQueueDepth,
   type QueuedChildExecution,
 } from "@agboss/core";
 import { z } from "zod";
 import { RedisConnection } from "../connection/redis-connection.js";
 import { keyOf, runScript } from "../connection/scripts.js";
-import { CLAIM, COMPLETE, DELETE_TREE, QUEUED_AT_DIGITS, SAVE } from "./queue/queue-scripts.js";
+import {
+  CLAIM,
+  COMPLETE,
+  DELETE_TREE,
+  DEPTH,
+  QUEUED_AT_DIGITS,
+  SAVE,
+} from "./queue/queue-scripts.js";
 
 /** A time as the row keeps it: ms as text. */
 const Time = z
@@ -59,6 +67,13 @@ const fieldsOf = (reply: unknown): Record<string, string> => {
 const queuedAtText = (queuedAt: Date): string =>
   String(queuedAt.getTime() + 8.64e15).padStart(QUEUED_AT_DIGITS, "0");
 
+/** A queue member's `queuedAt`: its time part shifted back. */
+const queuedAtOf = (member: string): Date =>
+  new Date(Number(member.slice(0, QUEUED_AT_DIGITS)) - 8.64e15);
+
+/** The depth script's reply: the queued count, the running count, the oldest queued member. */
+const DepthReply = z.tuple([z.number().int(), z.number().int()]).rest(z.string().nullable());
+
 /**
  * `ChildExecutionQueueRepository` on Redis (agbossjs/agboss#693): a child is one hash, the queued
  * ones one sorted set (the deepest first, then the longest waiting), a tree's children one set.
@@ -66,7 +81,8 @@ const queuedAtText = (queuedAt: Date): string =>
  * compares the stored status (and claim) and writes, a claim takes the first member off the queue
  * and marks its row running — so of two instances exactly one claims a child — and a completion
  * matches this instance's running row. Times are the framework `Clock`'s. On any backend beside
- * the leases (#526).
+ * the leases (#526). The depth (agbossjs/agboss#485) is one script over two more keys the others
+ * keep: the queued members by time alone and the running rows.
  */
 @Injectable({ deps: [RedisConnection, Clock, ApplicationContext] })
 export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepository {
@@ -94,7 +110,10 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     const saved = await runScript(
       this.connection.client,
       SAVE,
-      [this.#rowKey(child.tenantId, child.executionId), this.#queueKey(), this.#treeKey(child)],
+      [
+        ...[this.#rowKey(child.tenantId, child.executionId), this.#queueKey()],
+        ...[this.#treeKey(child), this.#queuedByTimeKey(), this.#runningKey()],
+      ],
       [
         ...[id, `${queuedAtText(child.queuedAt)}${id}`, String(-child.depth)],
         child.claimedAt === undefined ? "" : String(child.claimedAt.getTime()),
@@ -116,7 +135,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     const reply = await runScript(
       this.connection.client,
       CLAIM,
-      [this.#queueKey()],
+      [this.#queueKey(), this.#queuedByTimeKey(), this.#runningKey()],
       [
         `${this.connection.keyPrefix}child:`,
         this.applicationContext.instanceId,
@@ -134,7 +153,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     const completed = await runScript(
       this.connection.client,
       COMPLETE,
-      [this.#rowKey(tenantId, executionId)],
+      [this.#rowKey(tenantId, executionId), this.#runningKey()],
       [
         ...[this.applicationContext.instanceId, end.status],
         ...[String(this.clock.now().getTime()), end.failure ?? ""],
@@ -150,9 +169,27 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     await runScript(
       this.connection.client,
       DELETE_TREE,
-      [this.#treeKey({ tenantId, rootExecutionId }), this.#queueKey()],
+      [
+        ...[this.#treeKey({ tenantId, rootExecutionId }), this.#queueKey()],
+        ...[this.#queuedByTimeKey(), this.#runningKey()],
+      ],
       [`${this.connection.keyPrefix}child:`],
     );
+  }
+
+  async findQueueDepth(): Promise<ChildExecutionQueueDepth> {
+    const reply = await runScript(
+      this.connection.client,
+      DEPTH,
+      [this.#queueKey(), this.#queuedByTimeKey(), this.#runningKey()],
+      [],
+    );
+    const [queued, running, oldest] = DepthReply.parse(reply);
+    return {
+      queued,
+      running,
+      oldestQueuedAt: oldest === undefined || oldest === null ? undefined : queuedAtOf(oldest),
+    };
   }
 
   #rowKey(tenantId: string, executionId: string): string {
@@ -161,6 +198,14 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
 
   #queueKey(): string {
     return `${this.connection.keyPrefix}children-queued`;
+  }
+
+  #queuedByTimeKey(): string {
+    return `${this.connection.keyPrefix}children-queued-by-time`;
+  }
+
+  #runningKey(): string {
+    return `${this.connection.keyPrefix}children-running`;
   }
 
   #treeKey(tree: Pick<QueuedChildExecution, "tenantId" | "rootExecutionId">): string {
