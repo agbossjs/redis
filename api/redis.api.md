@@ -7,6 +7,7 @@
 import { AGBossError } from '@agboss/core';
 import { ApplicationContext } from '@agboss/core';
 import { ChildExecutionEnd } from '@agboss/core';
+import { ChildExecutionQueueDepth } from '@agboss/core';
 import { ChildExecutionQueueRepository } from '@agboss/core';
 import { Clock } from '@agboss/core';
 import { createClient } from '@redis/client';
@@ -38,6 +39,8 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     deleteAllByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<void>;
     // (undocumented)
     findByTenantIdAndExecutionId(tenantId: string, executionId: string): Promise<QueuedChildExecution | undefined>;
+    // (undocumented)
+    findQueueDepth(): Promise<ChildExecutionQueueDepth>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
@@ -157,12 +160,13 @@ export class RedisSettingsError extends AGBossError {
 // src/errors.ts:27:12 - (ae-undocumented) Missing documentation for "name".
 // src/errors.ts:46:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:47:12 - (ae-undocumented) Missing documentation for "name".
-// src/stores/redis-child-execution-queue.repository.ts:81:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/redis-child-execution-queue.repository.ts:85:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
-// src/stores/redis-child-execution-queue.repository.ts:107:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
-// src/stores/redis-child-execution-queue.repository.ts:115:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
-// src/stores/redis-child-execution-queue.repository.ts:129:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
-// src/stores/redis-child-execution-queue.repository.ts:146:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:97:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/redis-child-execution-queue.repository.ts:101:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/redis-child-execution-queue.repository.ts:126:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:134:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
+// src/stores/redis-child-execution-queue.repository.ts:148:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:165:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:180:9 - (ae-undocumented) Missing documentation for "findQueueDepth".
 // src/stores/redis-execution-lease.repository.ts:70:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/redis-execution-lease.repository.ts:79:9 - (ae-undocumented) Missing documentation for "acquire".
 // src/stores/redis-execution-lease.repository.ts:104:9 - (ae-undocumented) Missing documentation for "renew".
