@@ -6,6 +6,7 @@ import {
   Injectable,
   type ChildExecutionEnd,
   type ChildExecutionQueueDepth,
+  type ChildExecutionQueueWatch,
   type QueuedChildExecution,
 } from "@agboss/core";
 import { z } from "zod";
@@ -19,6 +20,7 @@ import {
   QUEUED_AT_DIGITS,
   SAVE,
 } from "./queue/queue-scripts.js";
+import { openQueueWatch } from "./queue/queue-watch.js";
 
 /** A time as the row keeps it: ms as text. */
 const Time = z
@@ -82,7 +84,8 @@ const DepthReply = z.tuple([z.number().int(), z.number().int()]).rest(z.string()
  * and marks its row running — so of two instances exactly one claims a child — and a completion
  * matches this instance's running row. Times are the framework `Clock`'s. On any backend beside
  * the leases (#526). The depth (agbossjs/agboss#485) is one script over two more keys the others
- * keep: the queued members by time alone and the running rows.
+ * keep: the queued members by time alone and the running rows. The watch (agbossjs/agboss#777) is a
+ * subscription to the channel every save publishes on, one connection of its own per watch.
  */
 @Injectable({ deps: [RedisConnection, Clock, ApplicationContext] })
 export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepository {
@@ -117,6 +120,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
       [
         ...[id, `${queuedAtText(child.queuedAt)}${id}`, String(-child.depth)],
         child.claimedAt === undefined ? "" : String(child.claimedAt.getTime()),
+        this.#queuedChannel(),
         ...Object.entries(fields).flat(),
       ],
     );
@@ -190,6 +194,23 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
       running,
       oldestQueuedAt: oldest === undefined || oldest === null ? undefined : queuedAtOf(oldest),
     };
+  }
+
+  /**
+   * Wakes `onQueued` whenever any instance queues a child — new, or queued again — on this key
+   * prefix (agbossjs/agboss#777): a subscription on a connection of its own to the channel the save
+   * script publishes on. Idle on an empty queue: the server pushes, nothing is polled. A dropped
+   * connection reconnects (1 s, doubling, at most 30 s apart), subscribes again and wakes
+   * `onQueued` once when back — a message sent while it was down is lost (pub/sub keeps nothing),
+   * so that wake-up stands for it, and the core's sweep stays the floor. Rejects when the server
+   * does not answer: the core opens it again at its next sweep.
+   */
+  override watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch> {
+    return openQueueWatch(this.connection.subscriber(), this.#queuedChannel(), onQueued);
+  }
+
+  #queuedChannel(): string {
+    return `${this.connection.keyPrefix}child-queued`;
   }
 
   #rowKey(tenantId: string, executionId: string): string {

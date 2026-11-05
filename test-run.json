@@ -5,7 +5,7 @@
       "name": "tests",
       "include": ["tests/**/*.test.ts"],
       "exclude": ["tests/faults/faults.test.ts", "tests/crash/**"],
-      "minFiles": 16
+      "minFiles": 17
     },
     {
       "name": "contracts",
