@@ -6,8 +6,6 @@ short-lived coordination state. Not a whole application: threads, checkpoints, f
 outbound calls, pauses, records, the lease log and the kept execution ids stay in PostgreSQL or
 MongoDB (agbossjs/agboss#527, #693).
 
-> Not published to npm yet: it ships with the 0.1.1 release.
-
 ## The stores
 
 | Contract                        | Store                                      | How it maps to Redis                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |

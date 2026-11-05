@@ -1,6 +1,6 @@
 {
   "name": "@agboss/redis",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Redis coordination stores for AGBoss: execution leases (fencing epochs on the server's clock), the child queue and rate limits on one durable primary (appendonly yes, appendfsync always, noeviction) — threads, records and fenced effects stay in PostgreSQL or MongoDB.",
   "type": "module",
   "license": "Apache-2.0",
