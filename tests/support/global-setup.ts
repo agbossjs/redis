@@ -19,11 +19,13 @@ async function requireAnswer(name: string, url: string): Promise<void> {
   }
 }
 
-export default async function requireRedis(): Promise<void> {
-  const servers = [
-    ["AGBOSS_REDIS_TEST_URL", DURABLE_URL],
-    ["AGBOSS_REDIS_WEAK_TEST_URL", WEAK_URL],
-  ] as const;
+/**
+ * Requires the given servers: in CI a missing URL fails the run before any test; locally it is
+ * skipped with the notice; a URL that is set must answer.
+ */
+export async function requireServers(
+  servers: readonly (readonly [name: string, url: string])[],
+): Promise<void> {
   const missing = servers.filter(([, url]) => url === "").map(([name]) => name);
   if (missing.length > 0 && process.env.CI !== undefined && process.env.CI !== "")
     throw new Error(
@@ -34,4 +36,11 @@ export default async function requireRedis(): Promise<void> {
       `\n[agboss-redis] ${missing.join(" and ")} not set: the integration tests against a real Redis are SKIPPED (they run in CI). To run them, ${HOW_TO}\n\n`,
     );
   for (const [name, url] of servers) if (url !== "") await requireAnswer(name, url);
+}
+
+export default async function requireRedis(): Promise<void> {
+  await requireServers([
+    ["AGBOSS_REDIS_TEST_URL", DURABLE_URL],
+    ["AGBOSS_REDIS_WEAK_TEST_URL", WEAK_URL],
+  ]);
 }

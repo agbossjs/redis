@@ -9,7 +9,7 @@ export default defineConfig({
   test: {
     include: ["tests/faults/**/*.test.ts"],
     expect: { requireAssertions: true },
-    globalSetup: ["./tests/support/global-setup.ts"],
+    globalSetup: ["./tests/support/global-setup.faults.ts"],
     fileParallelism: false,
     hookTimeout: 60_000,
   },
