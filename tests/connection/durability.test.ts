@@ -22,7 +22,12 @@ function fakeConfigGet(config: Readonly<Record<string, string>>): {
   return { configGet, asked };
 }
 
-const DURABLE = { appendonly: "yes", appendfsync: "always" };
+const DURABLE = {
+  appendonly: "yes",
+  appendfsync: "always",
+  "no-appendfsync-on-rewrite": "no",
+  "maxmemory-policy": "noeviction",
+};
 
 describe("durabilityProblemsOf: the server's settings", () => {
   it("appendonly yes and appendfsync always: durable", () => {
@@ -30,7 +35,14 @@ describe("durabilityProblemsOf: the server's settings", () => {
   });
 
   it("the values are compared without case", () => {
-    expect(durabilityProblemsOf({ appendonly: "YES", appendfsync: "Always" })).toEqual([]);
+    expect(
+      durabilityProblemsOf({
+        ...DURABLE,
+        appendonly: "YES",
+        appendfsync: "Always",
+        "maxmemory-policy": "NoEviction",
+      }),
+    ).toEqual([]);
   });
 
   it("appendonly no (Redis's default): every write since the last snapshot is lost", () => {
@@ -49,7 +61,12 @@ describe("durabilityProblemsOf: the server's settings", () => {
   );
 
   it("Redis's defaults fail on both, in order", () => {
-    const problems = durabilityProblemsOf({ appendonly: "no", appendfsync: "everysec" });
+    const problems = durabilityProblemsOf({
+      appendonly: "no",
+      appendfsync: "everysec",
+      "no-appendfsync-on-rewrite": "no",
+      "maxmemory-policy": "noeviction",
+    });
 
     expect(problems.map((problem) => problem.split(":")[0])).toEqual([
       "appendonly is no",
@@ -61,21 +78,49 @@ describe("durabilityProblemsOf: the server's settings", () => {
     expect(durabilityProblemsOf({})).toEqual([
       expect.stringMatching(/^appendonly is unset: /),
       expect.stringMatching(/^appendfsync is unset: /),
+      expect.stringMatching(/^no-appendfsync-on-rewrite is unset: /),
+      expect.stringMatching(/^maxmemory-policy is unset: /),
     ]);
   });
+
+  it("no-appendfsync-on-rewrite yes: a rewrite's writes are acknowledged unsynced", () => {
+    expect(durabilityProblemsOf({ ...DURABLE, "no-appendfsync-on-rewrite": "yes" })).toEqual([
+      expect.stringMatching(
+        /^no-appendfsync-on-rewrite is yes: .*without an fsync — set no-appendfsync-on-rewrite no$/,
+      ),
+    ]);
+  });
+
+  it.each(["allkeys-lru", "volatile-lru", "allkeys-random", "volatile-ttl", "allkeys-lfu"])(
+    "maxmemory-policy %s: a lease key may be evicted and its epoch start again at 1",
+    (policy) => {
+      expect(durabilityProblemsOf({ ...DURABLE, "maxmemory-policy": policy })).toEqual([
+        expect.stringMatching(
+          new RegExp(
+            `^maxmemory-policy is ${policy}: .*epoch starts again at 1 — set maxmemory-policy noeviction$`,
+          ),
+        ),
+      ]);
+    },
+  );
 });
 
 describe("durabilityProblemsOfServer: CONFIG GET on the server", () => {
-  it("asks for appendonly and appendfsync and merges the replies", async () => {
+  it("asks for every durability setting and merges the replies", async () => {
     const { configGet, asked } = fakeConfigGet(DURABLE);
 
     expect(await durabilityProblemsOfServer(configGet)).toEqual([]);
     expect(asked).toEqual([...DURABILITY_PARAMETERS]);
-    expect(DURABILITY_PARAMETERS).toEqual(["appendonly", "appendfsync"]);
+    expect(DURABILITY_PARAMETERS).toEqual([
+      "appendonly",
+      "appendfsync",
+      "no-appendfsync-on-rewrite",
+      "maxmemory-policy",
+    ]);
   });
 
   it("a weak server's replies give its problems", async () => {
-    const { configGet } = fakeConfigGet({ appendonly: "yes", appendfsync: "everysec" });
+    const { configGet } = fakeConfigGet({ ...DURABLE, appendfsync: "everysec" });
 
     expect(await durabilityProblemsOfServer(configGet)).toEqual([
       expect.stringMatching(/^appendfsync is everysec/),
@@ -89,7 +134,7 @@ describe("durabilityProblemsOfServer: CONFIG GET on the server", () => {
 
     expect(await durabilityProblemsOfServer(refusing)).toEqual([
       expect.stringMatching(
-        /^CONFIG GET appendonly\/appendfsync failed \(ERR unknown command 'CONFIG'\): the durability cannot be verified/,
+        /^CONFIG GET appendonly, appendfsync, no-appendfsync-on-rewrite, maxmemory-policy failed \(ERR unknown command 'CONFIG'\): the durability cannot be verified/,
       ),
     ]);
   });

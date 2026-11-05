@@ -6,9 +6,48 @@
 
 import { AGBossError } from '@agboss/core';
 import { ApplicationContext } from '@agboss/core';
+import { ChildExecutionEnd } from '@agboss/core';
+import { ChildExecutionQueueDepth } from '@agboss/core';
+import { ChildExecutionQueueRepository } from '@agboss/core';
+import { ChildExecutionQueueWatch } from '@agboss/core';
+import { Clock } from '@agboss/core';
 import { createClient } from '@redis/client';
+import { ExecutionIdentity } from '@agboss/core';
+import { ExecutionLease } from '@agboss/core';
+import { ExecutionLeaseRepository } from '@agboss/core';
+import type { Milliseconds } from '@agboss/core/units';
 import { OnDestroy } from '@agboss/core';
 import { OnInit } from '@agboss/core';
+import { QueuedChildExecution } from '@agboss/core';
+import { RateLimitLease } from '@agboss/core';
+import { RateLimitRepository } from '@agboss/core';
+import { StoreClock } from '@agboss/core';
+
+// @public
+export const DEFAULT_KEY_PREFIX = "agboss:";
+
+// @public
+export type KeptExecutionIds = Pick<ExecutionLeaseRepository, "saveExecutionIdIfAbsent">;
+
+// @public
+export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepository {
+    constructor(connection: RedisConnection, clock: Clock, applicationContext: ApplicationContext);
+    // (undocumented)
+    claimFirstByStatusQueuedOrderByDepthDesc(): Promise<QueuedChildExecution | undefined>;
+    // (undocumented)
+    completeByTenantIdAndExecutionId(tenantId: string, executionId: string, end: ChildExecutionEnd): Promise<boolean>;
+    // (undocumented)
+    deleteAllByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<void>;
+    // (undocumented)
+    findByTenantIdAndExecutionId(tenantId: string, executionId: string): Promise<QueuedChildExecution | undefined>;
+    // (undocumented)
+    findQueueDepth(): Promise<ChildExecutionQueueDepth>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    saveIfAbsent(child: QueuedChildExecution): Promise<boolean>;
+    watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch>;
+}
 
 // @public
 export type RedisClient = ReturnType<typeof createClient>;
@@ -17,16 +56,30 @@ export type RedisClient = ReturnType<typeof createClient>;
 export class RedisConnection implements OnInit, OnDestroy {
     constructor(source: ApplicationContext | RedisConnectionSettings);
     readonly client: RedisClient;
+    deployment(): Promise<void>;
     durability(): Promise<RedisDurability>;
+    readonly keyPrefix: string;
     onDestroy(): Promise<void>;
     onInit(): Promise<void>;
     ping(): Promise<void>;
+    subscriber(): RedisClient;
 }
 
 // @public
 export interface RedisConnectionSettings {
     readonly durabilityOptOut?: RedisDurabilityOptOut;
+    readonly keyPrefix?: string;
     readonly url: string;
+}
+
+// @public
+export class RedisDeploymentError extends AGBossError {
+    constructor(problems: readonly string[]);
+    // (undocumented)
+    static readonly code: string;
+    // (undocumented)
+    name: string;
+    readonly problems: readonly string[];
 }
 
 // @public
@@ -52,6 +105,48 @@ export enum RedisDurabilityOptOut {
 }
 
 // @public
+export abstract class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
+    constructor(connection: RedisConnection, clock: StoreClock, applicationContext: ApplicationContext, keptIds: KeptExecutionIds);
+    // (undocumented)
+    acquire(tenantId: string, rootExecutionId: string, lease: Milliseconds): Promise<ExecutionLease | undefined>;
+    static readonly backend: string | undefined;
+    // (undocumented)
+    finish(held: ExecutionLease): Promise<void>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    reclaim(held: ExecutionLease, lease: Milliseconds): Promise<ExecutionLease | undefined>;
+    // (undocumented)
+    release(held: ExecutionLease): Promise<void>;
+    // (undocumented)
+    renew(held: ExecutionLease, lease: Milliseconds): Promise<Milliseconds | undefined>;
+    saveExecutionIdIfAbsent(identity: ExecutionIdentity): Promise<boolean>;
+    // (undocumented)
+    yield(held: ExecutionLease): Promise<boolean>;
+}
+
+// @public
+export class RedisRateLimitRepository extends RateLimitRepository {
+    constructor(connection: RedisConnection, clock: Clock, applicationContext: ApplicationContext);
+    // (undocumented)
+    acquire(key: string, maxSlots: number, lease: Milliseconds): Promise<RateLimitLease | undefined>;
+    // (undocumented)
+    addToWindow(key: string, amount: number, window: Milliseconds, limit?: number): Promise<number | undefined>;
+    // (undocumented)
+    clearWindow(key: string): Promise<void>;
+    // (undocumented)
+    pausedUntil(key: string): Promise<Date | undefined>;
+    // (undocumented)
+    pauseUntil(key: string, until: Date): Promise<void>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    release(rateLimitLease: RateLimitLease): Promise<void>;
+    // (undocumented)
+    renew(rateLimitLease: RateLimitLease, lease: Milliseconds): Promise<boolean>;
+}
+
+// @public
 export class RedisSettingsError extends AGBossError {
     // (undocumented)
     static readonly code: string;
@@ -61,11 +156,35 @@ export class RedisSettingsError extends AGBossError {
 
 // Warnings were encountered during analysis:
 //
-// src/connection/durability.ts:23:3 - (ae-undocumented) Missing documentation for "problems".
+// src/connection/durability.ts:34:3 - (ae-undocumented) Missing documentation for "problems".
 // src/errors.ts:16:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:17:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:28:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:29:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:26:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:27:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:46:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:47:12 - (ae-undocumented) Missing documentation for "name".
+// src/stores/redis-child-execution-queue.repository.ts:100:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/redis-child-execution-queue.repository.ts:104:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/redis-child-execution-queue.repository.ts:130:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:138:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
+// src/stores/redis-child-execution-queue.repository.ts:152:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:169:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:184:9 - (ae-undocumented) Missing documentation for "findQueueDepth".
+// src/stores/redis-execution-lease.repository.ts:70:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/redis-execution-lease.repository.ts:79:9 - (ae-undocumented) Missing documentation for "acquire".
+// src/stores/redis-execution-lease.repository.ts:104:9 - (ae-undocumented) Missing documentation for "renew".
+// src/stores/redis-execution-lease.repository.ts:113:9 - (ae-undocumented) Missing documentation for "release".
+// src/stores/redis-execution-lease.repository.ts:117:9 - (ae-undocumented) Missing documentation for "finish".
+// src/stores/redis-execution-lease.repository.ts:121:9 - (ae-undocumented) Missing documentation for "yield".
+// src/stores/redis-execution-lease.repository.ts:129:9 - (ae-undocumented) Missing documentation for "reclaim".
+// src/stores/redis-rate-limit.repository.ts:38:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/redis-rate-limit.repository.ts:42:9 - (ae-undocumented) Missing documentation for "acquire".
+// src/stores/redis-rate-limit.repository.ts:62:9 - (ae-undocumented) Missing documentation for "renew".
+// src/stores/redis-rate-limit.repository.ts:72:9 - (ae-undocumented) Missing documentation for "release".
+// src/stores/redis-rate-limit.repository.ts:79:9 - (ae-undocumented) Missing documentation for "addToWindow".
+// src/stores/redis-rate-limit.repository.ts:97:9 - (ae-undocumented) Missing documentation for "clearWindow".
+// src/stores/redis-rate-limit.repository.ts:101:9 - (ae-undocumented) Missing documentation for "pauseUntil".
+// src/stores/redis-rate-limit.repository.ts:110:9 - (ae-undocumented) Missing documentation for "pausedUntil".
 
 // (No @packageDocumentation comment for this package)
 

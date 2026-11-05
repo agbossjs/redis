@@ -9,8 +9,11 @@ export const WEAK_URL = process.env.AGBOSS_REDIS_WEAK_TEST_URL ?? "";
 
 /** The variables and how to get the servers, as the setup's notice says. */
 export const HOW_TO = `start a durable Redis and export its URL, e.g.
-  docker run -d --name agboss-redis -p 6379:6379 redis:7 redis-server --appendonly yes --appendfsync always
+  docker run -d --name agboss-redis -p 6379:6379 redis:7 redis-server --appendonly yes --appendfsync always --maxmemory-policy noeviction
   export AGBOSS_REDIS_TEST_URL=redis://localhost:6379
 and for the refusal, a Redis with the defaults (no append-only file):
   docker run -d --name agboss-redis-weak -p 6380:6379 redis:7
   export AGBOSS_REDIS_WEAK_TEST_URL=redis://localhost:6380`;
+
+/** A replica of the durable server (CI: `redis:7 --replicaof …`): the start check must refuse it. */
+export const REPLICA_URL = process.env.AGBOSS_REDIS_REPLICA_TEST_URL ?? "";

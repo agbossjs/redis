@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
+    // the crash test kills the server: it runs alone (`npm run test:crash`)
+    exclude: ["tests/crash/**", "tests/faults/faults.test.ts", "node_modules/**"],
     // a test that asserts nothing proves nothing (the core's #180)
     expect: { requireAssertions: true },
     // the unit tests run anywhere; the integration tests need AGBOSS_REDIS_TEST_URL — in CI a

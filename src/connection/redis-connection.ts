@@ -13,7 +13,12 @@ import {
   type RedisDurability,
   type RedisDurabilityOptOut,
 } from "./durability.js";
-import { settingsOfEnvironment, type RedisConnectionSettings } from "./settings.js";
+import { deploymentProblemsOfServer, requireOnePrimary } from "./deployment.js";
+import {
+  DEFAULT_KEY_PREFIX,
+  settingsOfEnvironment,
+  type RedisConnectionSettings,
+} from "./settings.js";
 
 /** The client of one application instance (node-redis, RESP2 replies). */
 export type RedisClient = ReturnType<typeof createClient>;
@@ -36,14 +41,39 @@ export function reconnectStrategyOf(
     !wasReady() && retries >= START_CONNECT_RETRIES ? cause : reconnectDelayOf(retries + 1);
 }
 
-/** A client of `url`: parsed here, connected at `onInit` only. */
-function clientOf(url: string): RedisClient {
+/** The subscriber's first wait before a reconnect (agbossjs/agboss#777): 1 s, doubled each time. */
+export const SUBSCRIBER_RECONNECT_FIRST_MS = 1000;
+/** The subscriber's longest wait before a reconnect: 30 s, the core's sweep. */
+export const SUBSCRIBER_RECONNECT_MAX_MS = 30_000;
+
+/** The subscriber's wait before reconnect attempt `retries` (from 0): 1 s, 2 s, 4 s, … at most 30 s. */
+export const subscriberReconnectDelayOf = (retries: number): number =>
+  Math.min(SUBSCRIBER_RECONNECT_FIRST_MS * 2 ** Math.min(retries, 5), SUBSCRIBER_RECONNECT_MAX_MS);
+
+/**
+ * The subscriber's reconnect strategy: before it was first ready, none — its first connect
+ * rejects at once (the core opens the watch again at its next sweep); once it was ready, a dropped
+ * connection is retried for as long as it takes, `subscriberReconnectDelayOf` apart.
+ */
+export function subscriberReconnectStrategyOf(
+  wasReady: () => boolean,
+): (retries: number, cause: Error) => number | Error {
+  return (retries, cause) => (wasReady() ? subscriberReconnectDelayOf(retries) : cause);
+}
+
+type ReconnectStrategy = (retries: number, cause: Error) => number | Error;
+
+/** A client of `url`: parsed here, connected by its owner. */
+function clientOf(
+  url: string,
+  strategyOf: (wasReady: () => boolean) => ReconnectStrategy = reconnectStrategyOf,
+): RedisClient {
   let wasReady = false;
   let client: RedisClient;
   try {
     client = createClient({
       url,
-      socket: { reconnectStrategy: reconnectStrategyOf(() => wasReady) },
+      socket: { reconnectStrategy: strategyOf(() => wasReady) },
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -75,18 +105,34 @@ function clientOf(url: string): RedisClient {
   environmentFields: {
     redisUrl: EnvironmentField.Secret,
     redisDurabilityOptOut: EnvironmentField.OptionalText,
+    redisKeyPrefix: EnvironmentField.OptionalText,
   },
 })
 export class RedisConnection implements OnInit, OnDestroy {
   /** The instance's client: every store's commands and scripts. */
   readonly client: RedisClient;
+  /** What every key of the stores starts with (`redisKeyPrefix`, default `agboss:`). */
+  readonly keyPrefix: string;
   readonly #optOut: RedisDurabilityOptOut | undefined;
+  readonly #url: string;
 
   constructor(source: ApplicationContext | RedisConnectionSettings) {
     const settings =
       source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
     this.#optOut = settings.durabilityOptOut;
+    this.keyPrefix = settings.keyPrefix ?? DEFAULT_KEY_PREFIX;
+    this.#url = settings.url;
     this.client = clientOf(settings.url);
+  }
+
+  /**
+   * A new client on the same server for pub/sub (`SUBSCRIBE` takes a connection over), not
+   * connected: its owner connects and closes it. Its first connect rejects at once when the server
+   * does not answer; once ready, a dropped connection reconnects 1 s, 2 s, … at most 30 s apart and
+   * subscribes again before it is ready (agbossjs/agboss#777).
+   */
+  subscriber(): RedisClient {
+    return clientOf(this.#url, subscriberReconnectStrategyOf);
   }
 
   /**
@@ -100,15 +146,27 @@ export class RedisConnection implements OnInit, OnDestroy {
     return requireDurability(problems, this.#optOut);
   }
 
+  /**
+   * The server is one primary (`INFO replication` / `cluster`): rejects with
+   * `RedisDeploymentError` for a replica, a cluster, or an `INFO` it may not read. No opt-out.
+   */
+  async deployment(): Promise<void> {
+    requireOnePrimary(await deploymentProblemsOfServer((section) => this.client.info(section)));
+  }
+
   /** One `PING`: every Redis store's `ping()`. Rejects when the server does not answer. */
   async ping(): Promise<void> {
     await this.client.ping();
   }
 
-  /** Connects, then the start check: a server that can lose an acknowledged write is refused. */
+  /**
+   * Connects, then the start checks: a server that is not one primary, or that can lose an
+   * acknowledged write, is refused.
+   */
   async onInit(): Promise<void> {
     await this.client.connect();
     try {
+      await this.deployment();
       await this.durability();
     } catch (error) {
       await this.onDestroy();

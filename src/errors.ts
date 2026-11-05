@@ -18,8 +18,26 @@ export class RedisSettingsError extends AGBossError {
 }
 
 /**
- * The server does not keep an acknowledged write across a crash: `appendonly` is not `yes`, or
- * `appendfsync` is not `always`, or the settings cannot be read (`CONFIG GET` disabled). A lease
+ * The server is not one primary (agbossjs/agboss#693 AC4): a replica, a cluster, or a server whose
+ * `INFO` cannot be read. A failover to an asynchronous replica can hand an acknowledged lease epoch
+ * out again; no opt-out — run one durable primary without automatic failover.
+ */
+export class RedisDeploymentError extends AGBossError {
+  static override readonly code: string = "redis.deployment-unsupported";
+  override name = "RedisDeploymentError";
+  /** Each way the server falls short of one primary. */
+  readonly problems: readonly string[];
+
+  constructor(problems: readonly string[]) {
+    super(`the Redis stores need one durable primary — ${problems.join("; ")}`);
+    this.problems = problems;
+  }
+}
+
+/**
+ * The server does not keep an acknowledged write: `appendonly` is not `yes`, `appendfsync` is not
+ * `always`, `no-appendfsync-on-rewrite` is not `no`, `maxmemory-policy` is not `noeviction`, or the
+ * settings cannot be read (`CONFIG GET` disabled). A lease
  * acknowledged and then lost lets a second worker take a tree the first still moves. The
  * application does not start — set both on the server, or set `redisDurabilityOptOut:
  * "acknowledged-writes-may-be-lost"` to accept that loss knowingly.

@@ -7,10 +7,11 @@ every change starts as an issue there (stage = its `status:*` label: Triage → 
 ## Before a PR
 
 1. `npm ci && npm run pack:framework && npm run install:packed` — the core at the pinned SHA.
-2. `npm run check` — the gate CI runs too. The integration tests need a durable Redis and a Redis with
-   the defaults; without `AGBOSS_REDIS_TEST_URL` and `AGBOSS_REDIS_WEAK_TEST_URL`
-   they are skipped locally (the run says so) — CI runs them on `redis:7`. To run them locally,
-   start the servers the skip notice names and export the two URLs.
+2. `npm run check` — the gate CI runs too. The integration tests need a durable Redis, a Redis with
+   the defaults and a replica; without `AGBOSS_REDIS_TEST_URL`, `AGBOSS_REDIS_WEAK_TEST_URL` and
+   `AGBOSS_REDIS_REPLICA_TEST_URL` they are skipped locally (the run says so) — CI runs them on
+   `redis:7`. `npm run test:faults` and `npm run test:crash` (it kills the server named by
+   `AGBOSS_REDIS_CRASH_CONTAINER`) run in CI too.
 
 ## Branches, commits, PRs
 

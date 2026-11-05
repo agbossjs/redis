@@ -8,7 +8,15 @@ export interface RedisConnectionSettings {
   readonly url: string;
   /** Start on a server that can lose an acknowledged write — the opt-out names that loss. */
   readonly durabilityOptOut?: RedisDurabilityOptOut;
+  /**
+   * What every key of the stores starts with (default `agboss:`): several applications, or the
+   * tests' files, share one server without seeing each other's keys.
+   */
+  readonly keyPrefix?: string;
 }
+
+/** The prefix of every key when the settings name none. */
+export const DEFAULT_KEY_PREFIX = "agboss:";
 
 /** A `Secret` of the environment: only `reveal()` gives its value. */
 interface RevealedSecret {
@@ -31,14 +39,18 @@ const RedisEnvironment = z.object({
       message: `redisDurabilityOptOut must be exactly "${RedisDurabilityOptOut.AcknowledgedWritesMayBeLost}": the opt-out names the guarantee it gives up`,
     })
     .optional(),
+  redisKeyPrefix: z
+    .string()
+    .min(1, { message: "redisKeyPrefix is empty: leave it unset for the default agboss:" })
+    .optional(),
 });
 
 const MISSING_URL =
   'redisUrl is missing: declare redisUrl!: Secret in the environment contract and set redisUrl: secret("REDIS_URL")';
 
 /**
- * The connection settings an application's environment gives: `redisUrl` (required, a `Secret`)
- * and `redisDurabilityOptOut` (optional). A missing or mistyped field fails with
+ * The connection settings an application's environment gives: `redisUrl` (required, a `Secret`),
+ * `redisDurabilityOptOut` and `redisKeyPrefix` (optional). A missing or mistyped field fails with
  * `RedisSettingsError`, naming it — the URL itself is never printed.
  */
 export function settingsOfEnvironment(environment: unknown): RedisConnectionSettings {
@@ -52,8 +64,12 @@ export function settingsOfEnvironment(environment: unknown): RedisConnectionSett
       `the Redis stores need their environment fields — ${problems.join("; ")}`,
     );
   }
-  const { redisUrl, redisDurabilityOptOut } = parsed.data;
+  const { redisUrl, redisDurabilityOptOut, redisKeyPrefix } = parsed.data;
   const url = redisUrl.reveal();
   if (url.length === 0) throw new RedisSettingsError("redisUrl is empty");
-  return { url, durabilityOptOut: redisDurabilityOptOut };
+  return {
+    url,
+    durabilityOptOut: redisDurabilityOptOut,
+    ...(redisKeyPrefix === undefined ? {} : { keyPrefix: redisKeyPrefix }),
+  };
 }

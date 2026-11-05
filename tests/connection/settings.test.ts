@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RedisDurabilityOptOut, RedisSettingsError } from "../../src/index.js";
+import { DEFAULT_KEY_PREFIX, RedisDurabilityOptOut, RedisSettingsError } from "../../src/index.js";
 import { settingsOfEnvironment } from "../../src/connection/settings.js";
 import { revealing } from "../support/application-context.js";
 
@@ -68,5 +68,19 @@ describe("the environment fields of the Redis stores", () => {
 
   it("the error has its stable code", () => {
     expect(RedisSettingsError.code).toBe("redis.settings-invalid");
+  });
+
+  it("redisKeyPrefix is read when set; unset, the connection uses agboss:", () => {
+    expect(
+      settingsOfEnvironment({ redisUrl: revealing(URL), redisKeyPrefix: "billing:" }).keyPrefix,
+    ).toBe("billing:");
+    expect(settingsOfEnvironment({ redisUrl: revealing(URL) }).keyPrefix).toBeUndefined();
+    expect(DEFAULT_KEY_PREFIX).toBe("agboss:");
+  });
+
+  it("an empty redisKeyPrefix fails: every application would share the bare key space", () => {
+    expect(() => settingsOfEnvironment({ redisUrl: revealing(URL), redisKeyPrefix: "" })).toThrow(
+      /redisKeyPrefix is empty/u,
+    );
   });
 });

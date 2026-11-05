@@ -1,0 +1,10 @@
+{
+  "//": "agbossjs/agboss#630: what `npm run test:crash` must run (vitest.crash.config.ts) — the durability settings across a SIGKILL of the server.",
+  "projects": [
+    {
+      "name": "crash",
+      "include": ["tests/crash/**/*.test.ts"],
+      "minFiles": 1
+    }
+  ]
+}
