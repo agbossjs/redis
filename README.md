@@ -3,8 +3,8 @@
 Redis coordination stores for [AGBoss](https://github.com/agbossjs/agboss): several application
 instances share execution leases, the child queue and provider rate limits on one Redis — fast,
 short-lived coordination state. Not a whole application: threads, checkpoints, fenced effects,
-outbound calls, pauses, records, the lease log and the kept execution ids stay in PostgreSQL or
-MongoDB (agbossjs/agboss#527, #693).
+outbound calls, pauses, records, the lease log, the kept execution ids and the A2A tasks stay in
+PostgreSQL or MongoDB (agbossjs/agboss#527, #693, #824).
 
 > Not published to npm yet: it ships with the 0.1.1 release.
 
@@ -20,7 +20,12 @@ Why these and no other: the core's one-backend rule (#526) binds the fenced-effe
 stores to the lease store; rate limits, the queue and the lease log are on any backend. Of those,
 rate limits and the queue are pure coordination — a slot, a window, a queued child. The lease log
 is a record (its rows go into exported history), the trees keep undo marks (P5), the mesh store
-keeps answers: they belong with the durable rows.
+keeps answers: they belong with the durable rows. So do the A2A tasks an application serves
+(agbossjs/agboss#824): a task and the messages accepted for it are what a resent `messageId` is
+deduplicated against within the task retention (24 h by default) — a payment's one execution —, and
+a lost or evicted key would accept it again. An application that serves A2A (`@A2AExpose`) on these
+leases lists `PostgresA2ATaskRepository` or `MongoA2ATaskRepository`; with the in-memory default
+assembly refuses it (`[a2a.task-store-not-shared]`).
 
 **Never here, by design:** a fenced-effect or outbound-call store. Their guarantee — the lease
 checked in the business write's own transaction (ADR-0026, Guarantees A2) — needs one database
