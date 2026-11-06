@@ -15,7 +15,7 @@ import {
   SqlitePausedExecutionRepository,
   type Secret,
 } from "@agboss/core";
-import type { FaultStores } from "@agboss/core/testing/faults";
+import { FaultStoreTime, type FaultStores } from "@agboss/core/testing/faults";
 import {
   RedisChildExecutionQueueRepository,
   RedisConnection,
@@ -45,6 +45,9 @@ export class RedisFaultEnvironment {
 }
 
 export const faultStores: FaultStores<DatabaseSync> = {
+  // agbossjs/agboss#799: the fencing stores the history records are SQLite's, on the pods' clock —
+  // read at the suite's timeScale (the Redis queue and rate limits are not in the checked model)
+  storeTime: FaultStoreTime.Host,
   providers: [
     SqliteConnection,
     SqliteCheckpointSaver,
