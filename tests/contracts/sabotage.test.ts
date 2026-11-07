@@ -1,7 +1,5 @@
-import { fileURLToPath } from "node:url";
-import type { RunnerTask } from "vitest";
+import { runConformanceSabotage, type SabotageCase } from "@agboss/core/testing/contracts";
 import { beforeAll, describe, expect, it } from "vitest";
-import { startVitest } from "vitest/node";
 
 /**
  * agbossjs/agboss#693 AC3 — the core's suites bite on Redis: two broken lease stores
@@ -12,61 +10,29 @@ import { startVitest } from "vitest/node";
  * sabotage — a server without fsync claiming durability — is refused at start
  * (tests/integration/durability-crash.test.ts shows what it loses).
  */
-const ROOT = fileURLToPath(new URL("../../", import.meta.url));
-
-interface Found {
-  readonly suites: readonly string[];
-  readonly name: string;
-  readonly state: string | undefined;
-  readonly error: string;
-}
-
-const casesOf = (task: RunnerTask, suites: readonly string[]): Found[] =>
-  task.type === "suite"
-    ? task.tasks.flatMap((child) => casesOf(child, [...suites, task.name]))
-    : [
-        {
-          suites,
-          name: task.name,
-          state: task.result?.state,
-          error: task.result?.errors?.[0]?.message ?? "",
-        },
-      ];
-
-let found: Found[] = [];
+let found: readonly SabotageCase[] = [];
 
 beforeAll(async () => {
-  const exitCode = process.exitCode;
-  const vitest = await startVitest("test", [], {
-    root: ROOT,
-    config: false,
-    watch: false,
-    include: ["tests/contracts/fixtures/sabotage.conformance-fixture.ts"],
-    globalSetup: [],
-    reporters: [{}],
-    coverage: { enabled: false },
+  // agbossjs/agboss#831: the core's runner — a fixture that does not load, a hook that fails or a
+  // path that names nothing rejects here, never an empty run
+  const run = await runConformanceSabotage({
+    root: new URL("../../", import.meta.url),
+    fixtures: ["tests/contracts/fixtures/sabotage.conformance-fixture.ts"],
     testTimeout: 600_000,
     hookTimeout: 60_000,
   });
-  try {
-    found = vitest.state
-      .getFiles()
-      .flatMap((file) => file.tasks.flatMap((task) => casesOf(task, [])));
-  } finally {
-    await vitest.close();
-    process.exitCode = exitCode;
-  }
+  found = run.cases;
 }, 1_200_000);
 
-const failedIn = (suite: string): Found[] =>
+const failedIn = (suite: string): SabotageCase[] =>
   found.filter((one) => one.suites[0] === suite && one.state === "fail");
 
 describe("agbossjs/agboss#693 AC3: the suites bite on broken Redis lease stores", () => {
   it("leases on the caller's clock: the explorer fails one-live-holder with a minimal schedule", () => {
     const failed = failedIn("interleavings (Redis leases on the caller's clock)");
     expect(failed.length).toBeGreaterThan(0);
-    expect(failed.some((one) => one.error.includes("): [one-live-holder]"))).toBe(true);
-    expect(failed.map((one) => one.error).join("\n")).toContain("minimal schedule");
+    expect(failed.some((one) => (one.errors[0] ?? "").includes("): [one-live-holder]"))).toBe(true);
+    expect(failed.map((one) => one.errors[0] ?? "").join("\n")).toContain("minimal schedule");
   });
 
   it("a take made of a read and a write: the lease contract's three take races fail", () => {

@@ -157,8 +157,9 @@ npm run test:crash                                           # kills the test se
   clock ± lease/2, ± lease, ± 10 × lease, both #520 races).
 - `tests/contracts/sabotage.test.ts` — the suites bite on Redis: leases on the caller's clock fail
   the explorer's `one-live-holder`; a take made of a read and a write fails the three take races.
-- `tests/faults/` — the core's fault suite (23 scenarios, linearizability included) with the Redis
-  queue and rate limits beside the core's SQLite fencing set.
+- `tests/faults/` — the core's fault suite (its scenarios, linearizability included, then its
+  sabotages, each passing only when it charges twice — agbossjs/agboss#831) with the Redis queue
+  and rate limits beside the core's SQLite fencing set.
 - `tests/crash/` — `docker kill -s KILL` on the server: with the required settings every epoch
   survives; with the AOF off (opted out) an epoch is granted twice.
 - `tests/layout/` — the one-backend rule refuses Redis leases beside another backend's fencing store.
