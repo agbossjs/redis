@@ -4,6 +4,7 @@ import {
   StoreClock,
   type ExecutionIdentity,
   type ExecutionLease,
+  type StoreDescriptor,
 } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
@@ -56,7 +57,7 @@ const remainingOf = (value: number): Milliseconds => Math.max(0, Math.floor(valu
  */
 export abstract class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
   /** Its own backend: no fencing store of another one may be listed beside it (#526). */
-  static override readonly backend: string | undefined = "redis";
+  static override readonly store: StoreDescriptor = { backend: "redis" };
 
   constructor(
     private readonly connection: RedisConnection,

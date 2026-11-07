@@ -69,8 +69,8 @@ const mismatch = (
 
 describe("agbossjs/agboss#693: Redis leases with a fencing store of another backend fail assembly", () => {
   it("the Redis lease store declares its own backend, its subclasses inherit it", () => {
-    expect(RedisExecutionLeaseRepository.backend).toBe("redis");
-    expect(LayoutRedisExecutionLeaseRepository.backend).toBe("redis");
+    expect(RedisExecutionLeaseRepository.store.backend).toBe("redis");
+    expect(LayoutRedisExecutionLeaseRepository.store.backend).toBe("redis");
   });
 
   it.each([
