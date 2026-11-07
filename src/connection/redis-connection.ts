@@ -103,9 +103,9 @@ function clientOf(
   // checked at the application's assembly (agbossjs/agboss#511): a contract without redisUrl
   // fails with [environment.missing-field] before anything starts
   environmentFields: {
-    redisUrl: EnvironmentField.Secret,
-    redisDurabilityOptOut: EnvironmentField.OptionalText,
-    redisKeyPrefix: EnvironmentField.OptionalText,
+    redisUrl: EnvironmentField.secret(),
+    redisDurabilityOptOut: EnvironmentField.text({ optional: true }),
+    redisKeyPrefix: EnvironmentField.text({ optional: true }),
   },
 })
 export class RedisConnection implements OnInit, OnDestroy {
