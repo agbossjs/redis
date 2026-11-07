@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type ExecutionIdentity, type ExecutionLeaseRepository } from "@agboss/core";
-import type { ConformanceStore, StoreSeam } from "@agboss/core/testing/contracts";
+import type { ContractTarget, StoreInstanceContext } from "@agboss/core/testing/contracts";
 import { RedisConnection, RedisExecutionLeaseRepository } from "../../src/index.js";
 import type { KeptExecutionIds } from "../../src/index.js";
 import { DURABLE_URL } from "./server.js";
@@ -88,8 +88,8 @@ export async function connectionOf(space: TestKeySpace): Promise<RedisConnection
  */
 export function redisStore<TStore extends object>(
   space: TestKeySpace,
-  make: (connection: RedisConnection, seam: StoreSeam) => TStore,
-): ConformanceStore<TStore> {
+  make: (connection: RedisConnection, seam: StoreInstanceContext) => TStore,
+): Omit<ContractTarget<TStore>, "name"> {
   const lent = new WeakMap<TStore, RedisConnection>();
   return {
     instance: async (seam) => {
@@ -110,7 +110,7 @@ export function redisStore<TStore extends object>(
 export const leasesOf = (
   space: TestKeySpace,
   connection: RedisConnection,
-  seam: StoreSeam,
+  seam: StoreInstanceContext,
 ): ExecutionLeaseRepository =>
   new TestRedisExecutionLeaseRepository(
     connection,
