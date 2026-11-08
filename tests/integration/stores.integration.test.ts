@@ -6,7 +6,12 @@
  * source, the rate-limit keys expire by themselves, the queue's depth forgets a running child whose
  * tree ended (agbossjs/agboss#485), and the start checks pass on one durable primary.
  */
-import { ExecutionRecordStatus, StoreClock, type QueuedChildExecution } from "@agboss/core";
+import {
+  ExecutionRecordStatus,
+  StoreClock,
+  StoreTimeSource,
+  type QueuedChildExecution,
+} from "@agboss/core";
 import { seconds } from "@agboss/core/units";
 import { afterAll, describe, expect, it } from "vitest";
 import { RedisChildExecutionQueueRepository, RedisRateLimitRepository } from "../../src/index.js";
@@ -19,13 +24,12 @@ import {
 } from "../support/redis-store.js";
 import { DURABLE_URL } from "../support/server.js";
 
-/** The production store clock, whose own `now()` a store must never read for a lease. */
-class DecadesOffStoreClock extends StoreClock {
-  readonly isDatabaseTime = true;
-  now(): Date {
-    return new Date("2001-01-01T00:00:00.000Z");
-  }
-}
+/**
+ * The production store clock (`StoreTimeSource.Database`) on a clock decades off: a store that
+ * reads its `now()` for a lease — host time where the server's `TIME` belongs — fails the #533 case.
+ */
+const decadesOffStoreClock = (): StoreClock =>
+  new StoreClock(StoreTimeSource.Database, { now: () => new Date("2001-01-01T00:00:00.000Z") });
 
 const LEASE = seconds(30);
 
@@ -45,7 +49,7 @@ describe.skipIf(DURABLE_URL === "")(
         connection,
         leases: new TestRedisExecutionLeaseRepository(
           connection,
-          new DecadesOffStoreClock(),
+          decadesOffStoreClock(),
           new TestApplicationContext({}, instanceId),
           space.keptIds,
         ),
@@ -80,10 +84,10 @@ describe.skipIf(DURABLE_URL === "")(
       await leases.release(first);
       const second = await leases.acquire("default", "epochs-1", LEASE);
       if (second === undefined) throw new Error("a released tree is taken again");
-      await leases.finish(second);
+      await leases.retire(second);
 
       expect(await connection.client.pTTL(key)).toBe(-1);
-      expect(second.leaseEpoch).toBe(2);
+      expect(second.token).toBe(2);
       expect(await leases.acquire("default", "epochs-1", LEASE)).toBeUndefined();
       expect(await connection.client.hGet(key, "e")).toBe("2");
     });
@@ -93,7 +97,7 @@ describe.skipIf(DURABLE_URL === "")(
       await connection.client.scriptFlush();
       const lease = await leases.acquire("default", "flushed-1", LEASE);
 
-      expect(lease?.leaseEpoch).toBe(1);
+      expect(lease?.token).toBe(1);
       expect(await leases.acquire("default", "flushed-1", LEASE)).toBeUndefined();
     });
 
@@ -149,11 +153,11 @@ describe.skipIf(DURABLE_URL === "")(
       await queue.saveIfAbsent(child("running-2", "live-root"));
       await queue.claimFirstByStatusQueuedOrderByDepthDesc();
       await queue.claimFirstByStatusQueuedOrderByDepthDesc();
-      expect((await queue.findQueueDepth()).running).toBe(2);
+      expect((await queue.countByStatus()).running).toBe(2);
 
       await queue.deleteAllByTenantIdAndRootExecutionId("default", "ended-root");
 
-      expect(await queue.findQueueDepth()).toEqual({
+      expect(await queue.countByStatus()).toEqual({
         queued: 0,
         running: 1,
         oldestQueuedAt: undefined,

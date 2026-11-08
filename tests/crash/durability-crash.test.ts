@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { StoreClock, StoreTimeSource } from "@agboss/core";
 import { seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import {
@@ -70,7 +71,7 @@ async function leasesOn(
   });
   await connection.onInit();
   const application = new TestApplicationContext({}, "instance-1");
-  const clock = { isDatabaseTime: true, now: () => new Date(0) };
+  const clock = new StoreClock(StoreTimeSource.Database, { now: () => new Date(0) });
   const leases = new TestRedisExecutionLeaseRepository(
     connection,
     clock,
@@ -92,7 +93,7 @@ async function takeAndRelease(
       const lease = await leases.acquire("default", `tree-${String(tree)}`, LEASE);
       if (lease === undefined) throw new Error("a released lease is taken again");
       await leases.release(lease);
-      last = lease.leaseEpoch;
+      last = lease.token;
     }
     epochs.push(last);
   }

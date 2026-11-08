@@ -5,7 +5,7 @@ import {
   ExecutionRecordStatus,
   Injectable,
   type ChildExecutionEnd,
-  type ChildExecutionQueueDepth,
+  type ChildExecutionQueueCounts,
   type ChildExecutionQueueWatch,
   type QueuedChildExecution,
 } from "@agboss/core";
@@ -181,7 +181,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     );
   }
 
-  async findQueueDepth(): Promise<ChildExecutionQueueDepth> {
+  async countByStatus(): Promise<ChildExecutionQueueCounts> {
     const reply = await runScript(
       this.connection.client,
       DEPTH,

@@ -43,7 +43,7 @@ against a real Redis (`AGBOSS_REDIS_TEST_URL`) · api-extractor (`api/redis.api.
 - `src/stores/` — the lease store (abstract: a subclass names the durable store that keeps the
   execution ids), the child queue, rate limits; every atomic operation one Lua script, stated in
   each store's doc comment. A lease's expiry is the server's `TIME` inside the script
-  (`store-time.ts`; a test's clock only when `StoreClock.isDatabaseTime` is false); the queue and the
+  (`store-time.ts`; a test's clock only when `StoreClock.source` is not `StoreTimeSource.Database`); the queue and the
   rate limits use the framework's `Clock`. Lease keys are never deleted or expired. The queue's watch
   (agbossjs/agboss#777, `queue/queue-watch.ts`): the save script publishes, each watch subscribes on
   a connection of its own (`RedisConnection.subscriber()`), a reconnect wakes it once.
