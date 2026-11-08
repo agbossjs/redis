@@ -1,4 +1,10 @@
-import { StoreClock, type ApplicationContext, type Clock, type ExecutionLease } from "@agboss/core";
+import {
+  StoreClock,
+  StoreTimeSource,
+  type ApplicationContext,
+  type Clock,
+  type ExecutionLease,
+} from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
 import type { RedisConnection } from "../../../src/index.js";
 import type { KeptExecutionIds } from "../../../src/index.js";
@@ -16,17 +22,8 @@ import { TestRedisExecutionLeaseRepository } from "../../support/redis-store.js"
  */
 
 /** The instance's own clock as the store's time: what a client-clock store sends its scripts. */
-export class CallerStoreClock extends StoreClock {
-  readonly isDatabaseTime = false;
-
-  constructor(private readonly clock: Clock) {
-    super();
-  }
-
-  now(): Date {
-    return this.clock.now();
-  }
-}
+export const callerStoreClockOf = (clock: Clock): StoreClock =>
+  new StoreClock(StoreTimeSource.Host, clock);
 
 /** A lease store whose `acquire` reads the row, then writes it: check-then-write. */
 export class ReadThenWriteLeaseRepository extends TestRedisExecutionLeaseRepository {
@@ -42,25 +39,25 @@ export class ReadThenWriteLeaseRepository extends TestRedisExecutionLeaseReposit
   override async acquire(
     tenantId: string,
     rootExecutionId: string,
-    lease: Milliseconds,
+    duration: Milliseconds,
   ): Promise<ExecutionLease | undefined> {
     const key = keyOf(this.redis.keyPrefix, "lease", tenantId, rootExecutionId);
     const row = await this.redis.client.hGetAll(key);
     const now = this.time.now().getTime();
     if (row.s === "f" || (row.s === "h" && Number(row.x) > now)) return undefined;
-    const leaseEpoch = Number(row.e ?? "0") + 1;
-    const expires = now + lease;
+    const token = Number(row.e ?? "0") + 1;
+    const expires = now + duration;
     const holderInstanceId = this.application.instanceId;
     await this.redis.client.hSet(key, {
-      ...{ h: holderInstanceId, e: String(leaseEpoch), x: String(expires) },
+      ...{ h: holderInstanceId, e: String(token), x: String(expires) },
       ...{ s: "h", y: "0" },
     });
     const taken = {
-      ...{ tenantId, rootExecutionId, holderInstanceId, leaseEpoch },
-      ...{ expiresAt: new Date(expires), remaining: lease },
+      ...{ tenantId, rootExecutionId, holderInstanceId, token },
+      ...{ expiresAt: new Date(expires), remaining: duration },
     };
     return row.s === "h" && row.h !== undefined
-      ? { ...taken, takenOverFrom: { holderInstanceId: row.h, leaseEpoch: leaseEpoch - 1 } }
+      ? { ...taken, takenOverFrom: { holderInstanceId: row.h, token: token - 1 } }
       : taken;
   }
 }

@@ -1,17 +1,17 @@
-import type { StoreClock } from "@agboss/core";
+import { type StoreClock, StoreTimeSource } from "@agboss/core";
 
 /**
  * The time a lease script decides by (agbossjs/agboss#533, clock authority): the server's own,
  * `TIME` read inside the script — so every instance agrees on a lease's expiry whatever its own
  * wall clock says, and the instant of a take, a renewal or a check is the instant the script runs,
- * after every command before it; or, when a test injected its clock (`StoreClock.isDatabaseTime`
- * false), that clock's time as the script's argument, so the contract suites can move it. One
+ * after every command before it; or, when a test injected its clock (`StoreClock.source` not
+ * `StoreTimeSource.Database`), that clock's time as the script's argument, so the contract suites can move it. One
  * script for both: the argument is empty in production.
  */
 
 /** The script's time argument: `""` (the server's `TIME`), or the test's clock now, in ms. */
 export const storeNowArgumentOf = (clock: StoreClock): string =>
-  clock.isDatabaseTime ? "" : String(clock.now().getTime());
+  clock.source === StoreTimeSource.Database ? "" : String(clock.now().getTime());
 
 /**
  * `store_now(argument)` in Lua: the argument's ms when given, else the server's `TIME` in whole

@@ -29,7 +29,7 @@ export interface TestKeySpace {
 export class SharedKeptIds implements KeptExecutionIds {
   readonly ids = new Map<string, string>();
 
-  saveExecutionIdIfAbsent({ executionId, tenantId }: ExecutionIdentity): Promise<boolean> {
+  claimExecutionId({ executionId, tenantId }: ExecutionIdentity): Promise<boolean> {
     if (this.ids.has(executionId)) return Promise.resolve(false);
     this.ids.set(executionId, tenantId);
     return Promise.resolve(true);

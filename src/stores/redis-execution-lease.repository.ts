@@ -18,7 +18,7 @@ import { storeNowArgumentOf } from "./store-time.js";
  * the maintainer's decision for #527 keeps them with the durable rows (PostgreSQL, MongoDB): the
  * application's own durable lease store, which keeps them forever with one insert-if-absent.
  */
-export type KeptExecutionIds = Pick<ExecutionLeaseRepository, "saveExecutionIdIfAbsent">;
+export type KeptExecutionIds = Pick<ExecutionLeaseRepository, "claimExecutionId">;
 
 const Taken = z.union([
   z.tuple([z.number(), z.number(), z.number()]),
@@ -73,39 +73,39 @@ export abstract class RedisExecutionLeaseRepository extends ExecutionLeaseReposi
   }
 
   /** Kept by the durable store the subclass names, never in Redis (#527). */
-  saveExecutionIdIfAbsent(identity: ExecutionIdentity): Promise<boolean> {
-    return this.keptIds.saveExecutionIdIfAbsent(identity);
+  claimExecutionId(identity: ExecutionIdentity): Promise<boolean> {
+    return this.keptIds.claimExecutionId(identity);
   }
 
   async acquire(
     tenantId: string,
     rootExecutionId: string,
-    lease: Milliseconds,
+    duration: Milliseconds,
   ): Promise<ExecutionLease | undefined> {
     const holderInstanceId = this.applicationContext.instanceId;
     const reply = await this.#run(ACQUIRE, tenantId, rootExecutionId, [
       holderInstanceId,
-      String(lease),
+      String(duration),
       storeNowArgumentOf(this.clock),
     ]);
     if (reply === null) return undefined;
-    const [leaseEpoch, expires, remaining, previousHolder, previousEpoch] = Taken.parse(reply);
+    const [token, expires, remaining, previousHolder, previousEpoch] = Taken.parse(reply);
     const taken = {
-      ...{ tenantId, rootExecutionId, holderInstanceId, leaseEpoch },
+      ...{ tenantId, rootExecutionId, holderInstanceId, token },
       ...{ expiresAt: new Date(expires), remaining: remainingOf(remaining) },
     };
     return previousHolder === undefined || previousEpoch === undefined
       ? taken
       : {
           ...taken,
-          takenOverFrom: { holderInstanceId: previousHolder, leaseEpoch: previousEpoch },
+          takenOverFrom: { holderInstanceId: previousHolder, token: previousEpoch },
         };
   }
 
-  async renew(held: ExecutionLease, lease: Milliseconds): Promise<Milliseconds | undefined> {
+  async renew(held: ExecutionLease, duration: Milliseconds): Promise<Milliseconds | undefined> {
     const reply = await this.#run(RENEW, held.tenantId, held.rootExecutionId, [
       ...this.#heldBy(held),
-      String(lease),
+      String(duration),
       storeNowArgumentOf(this.clock),
     ]);
     return reply === null ? undefined : remainingOf(Remaining.parse(reply));
@@ -115,36 +115,36 @@ export abstract class RedisExecutionLeaseRepository extends ExecutionLeaseReposi
     await this.#run(CLOSE, held.tenantId, held.rootExecutionId, [...this.#heldBy(held), "r"]);
   }
 
-  async finish(held: ExecutionLease): Promise<void> {
+  async retire(held: ExecutionLease): Promise<void> {
     await this.#run(CLOSE, held.tenantId, held.rootExecutionId, [...this.#heldBy(held), "f"]);
   }
 
-  async yield(held: ExecutionLease): Promise<boolean> {
+  async yield(held: ExecutionLease): Promise<Milliseconds | undefined> {
     const reply = await this.#run(YIELD, held.tenantId, held.rootExecutionId, [
       ...this.#heldBy(held),
       storeNowArgumentOf(this.clock),
     ]);
-    return reply !== null;
+    return reply === null ? undefined : remainingOf(Remaining.parse(reply));
   }
 
-  async reclaim(held: ExecutionLease, lease: Milliseconds): Promise<ExecutionLease | undefined> {
+  async reclaim(held: ExecutionLease, duration: Milliseconds): Promise<ExecutionLease | undefined> {
     const reply = await this.#run(RECLAIM, held.tenantId, held.rootExecutionId, [
       ...this.#heldBy(held),
-      String(lease),
+      String(duration),
       storeNowArgumentOf(this.clock),
     ]);
     if (reply === null) return undefined;
-    const [leaseEpoch, expires, remaining] = Reclaimed.parse(reply);
+    const [token, expires, remaining] = Reclaimed.parse(reply);
     const { tenantId, rootExecutionId, holderInstanceId } = held;
     return {
-      ...{ tenantId, rootExecutionId, holderInstanceId, leaseEpoch },
+      ...{ tenantId, rootExecutionId, holderInstanceId, token },
       ...{ expiresAt: new Date(expires), remaining: remainingOf(remaining) },
     };
   }
 
-  /** The holder and epoch a script matches. */
+  /** The holder and token a script matches. */
   #heldBy(lease: ExecutionLease): readonly [string, string] {
-    return [lease.holderInstanceId, String(lease.leaseEpoch)];
+    return [lease.holderInstanceId, String(lease.token)];
   }
 
   #run(
