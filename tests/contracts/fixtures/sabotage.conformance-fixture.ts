@@ -4,7 +4,7 @@ import { storeConformance } from "@agboss/core/testing/contracts";
 import { afterAll } from "vitest";
 import { redisStore, testKeySpace } from "../../support/redis-store.js";
 import { callerStoreClockOf, ReadThenWriteLeaseRepository } from "./sabotage-stores.js";
-import { TestRedisExecutionLeaseRepository } from "../../support/redis-store.js";
+import { RedisExecutionLeaseRepository } from "../../../src/index.js";
 
 const WITHOUT = ["executionAuditLog", "fencedEffect", "outboundCall"] as const;
 const BUDGET = { depth: 6, walks: 20, walkDepth: 20 };
@@ -26,7 +26,7 @@ storeConformance({
     executionLease: redisStore(
       callerClock,
       (connection, seam) =>
-        new TestRedisExecutionLeaseRepository(
+        new RedisExecutionLeaseRepository(
           connection,
           callerStoreClockOf(seam.clock),
           seam.application,

@@ -7,10 +7,10 @@ import {
   RedisConnection,
   RedisDurabilityError,
   RedisDurabilityOptOut,
-  type RedisExecutionLeaseRepository,
+  RedisExecutionLeaseRepository,
 } from "../../src/index.js";
 import { TestApplicationContext } from "../support/application-context.js";
-import { SharedKeptIds, TestRedisExecutionLeaseRepository } from "../support/redis-store.js";
+import { SharedKeptIds } from "../support/redis-store.js";
 import { DURABLE_URL } from "../support/server.js";
 
 /**
@@ -72,7 +72,7 @@ async function leasesOn(
   await connection.onInit();
   const application = new TestApplicationContext({}, "instance-1");
   const clock = new StoreClock(StoreTimeSource.Database, { now: () => new Date(0) });
-  const leases = new TestRedisExecutionLeaseRepository(
+  const leases = new RedisExecutionLeaseRepository(
     connection,
     clock,
     application,

@@ -40,13 +40,14 @@ against a real Redis (`AGBOSS_REDIS_TEST_URL`) · api-extractor (`api/redis.api.
   never a pass; the scripts (`scripts.ts`: `EVALSHA`, `EVAL` once on `NOSCRIPT`; `keyOf`, one JSON
   array of parts); the reconnect strategy.
 - `src/errors.ts` — every named error, an `AGBossError` with a stable `redis.*` code.
-- `src/stores/` — the lease store (abstract: a subclass names the durable store that keeps the
-  execution ids), the child queue, rate limits; every atomic operation one Lua script, stated in
+- `src/stores/` — the lease store (concrete: the execution ids it hands out are kept by the durable
+  store the application gives under `EXECUTION_ID_STORE`, agbossjs/agboss#891), the child queue,
+  rate limits (`REDIS_COORDINATION_STORES`, `coordination-stores.ts`); every atomic operation one Lua script, stated in
   each store's doc comment. A lease's expiry is the server's `TIME` inside the script
   (`store-time.ts`; a test's clock only when `StoreClock.source` is not `StoreTimeSource.Database`); the queue and the
   rate limits use the framework's `Clock`. Lease keys are never deleted or expired. The queue's watch
   (agbossjs/agboss#777, `queue/queue-watch.ts`): the save script publishes, each watch subscribes on
-  a connection of its own (`RedisConnection.subscriber()`), a reconnect wakes it once.
+  a connection of its own (`RedisConnection.subscriber()`, `@internal`), a reconnect wakes it once.
 - `tests/connection/` — unit tests with fakes (no server); `tests/integration/` — against a durable
   primary, one with the defaults and a replica; `tests/contracts/` — `storeConformance` and the
   sabotage proofs; `tests/faults/`, `tests/crash/`, `tests/layout/` (the one-backend rule on

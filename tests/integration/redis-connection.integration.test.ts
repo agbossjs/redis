@@ -39,8 +39,24 @@ describe.skipIf(DURABLE_URL === "")(
         await connection.onInit();
 
         expect(connection.client.isReady).toBe(true);
-        expect(await connection.durability()).toEqual({ problems: [], optedOut: false });
+        expect(await connection.durability()).toEqual({ problems: [] });
         await expect(connection.ping()).resolves.toBeUndefined();
+      });
+    });
+
+    it("AC4: topology() reports one primary; requireSupportedTopology() and requireDurability() pass", async () => {
+      await withConnection(new RedisConnection({ url: DURABLE_URL }), async (connection) => {
+        await connection.onInit();
+
+        expect(await connection.topology()).toEqual({
+          role: "master",
+          isClusterEnabled: false,
+          problems: [],
+        });
+        await expect(connection.requireSupportedTopology()).resolves.toEqual(
+          await connection.topology(),
+        );
+        await expect(connection.requireDurability()).resolves.toEqual({ problems: [] });
       });
     });
 
@@ -90,8 +106,29 @@ describe.skipIf(WEAK_URL === "")(
         await connection.onInit();
 
         const durability = await connection.durability();
-        expect(durability.optedOut).toBe(true);
+        expect(durability.optOut).toBe(RedisDurabilityOptOut.AcknowledgedWritesMayBeLost);
         expect(durability.problems).toHaveLength(2);
+        await expect(connection.requireDurability()).resolves.toEqual(durability);
+      });
+    });
+
+    it("AC4: durability() reports a short server without throwing; requireDurability() refuses it", async () => {
+      const connection = new RedisConnection({ url: WEAK_URL });
+      await withConnection(connection, async () => {
+        await connection.client.connect();
+
+        const durability = await connection.durability();
+        expect(durability.optOut).toBeUndefined();
+        expect(durability.problems.map((problem) => problem.split(":")[0])).toEqual([
+          "appendonly is no",
+          "appendfsync is everysec",
+        ]);
+        await expect(connection.requireDurability()).rejects.toBeInstanceOf(RedisDurabilityError);
+        expect(await connection.topology()).toEqual({
+          role: "master",
+          isClusterEnabled: false,
+          problems: [],
+        });
       });
     });
 

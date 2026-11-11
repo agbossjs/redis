@@ -29,11 +29,16 @@ export const DURABILITY_PARAMETERS = [
   "maxmemory-policy",
 ] as const;
 
-/** What the start check found: the problems (empty when durable), and whether they were accepted. */
+/**
+ * What the server keeps of an acknowledged write (agbossjs/agboss#891: a report, it never throws):
+ * each setting found short (empty when durable), and the opt-out that accepts the loss when one is
+ * set (`redisDurabilityOptOut`) — `requireDurability()` refuses a short server without it.
+ */
 export interface RedisDurability {
+  /** Each setting found short, with what it loses and what to set. Empty when durable. */
   readonly problems: readonly string[];
-  /** True when the server is short and `redisDurabilityOptOut` accepted it. */
-  readonly optedOut: boolean;
+  /** The opt-out the connection was given, if any: the guarantee given up by name. */
+  readonly optOut?: RedisDurabilityOptOut;
 }
 
 /** `CONFIG GET <parameter>`: `{ parameter: value }`, empty when the server has no such one. */
@@ -97,15 +102,17 @@ export async function durabilityProblemsOfServer(configGet: ConfigGet): Promise<
   }
 }
 
-/**
- * The start check's verdict: durable → no problem; short → `RedisDurabilityError` naming each
- * problem, unless `optOut` accepts the loss (then the problems are reported, not thrown).
- */
-export function requireDurability(
+/** The report of `problems` under `optOut`: the opt-out named only when one was given. */
+export const durabilityOf = (
   problems: readonly string[],
   optOut: RedisDurabilityOptOut | undefined,
-): RedisDurability {
-  if (problems.length === 0) return { problems, optedOut: false };
-  if (optOut === undefined) throw new RedisDurabilityError(problems);
-  return { problems, optedOut: true };
+): RedisDurability => (optOut === undefined ? { problems } : { problems, optOut });
+
+/**
+ * The start check's verdict: durable → nothing; short → `RedisDurabilityError` naming each problem,
+ * unless the report's `optOut` accepts the loss.
+ */
+export function requireDurable(durability: RedisDurability): void {
+  if (durability.problems.length > 0 && durability.optOut === undefined)
+    throw new RedisDurabilityError({ problems: durability.problems });
 }

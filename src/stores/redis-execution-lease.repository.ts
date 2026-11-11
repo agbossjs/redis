@@ -1,24 +1,20 @@
 import {
   ApplicationContext,
+  EXECUTION_ID_STORE,
   ExecutionLeaseRepository,
+  Injectable,
   StoreClock,
   type ExecutionIdentity,
+  type ExecutionIdStore,
   type ExecutionLease,
   type StoreDescriptor,
 } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
-import type { RedisConnection } from "../connection/redis-connection.js";
+import { RedisConnection } from "../connection/redis-connection.js";
 import { keyOf, runScript, type RedisScript } from "../connection/scripts.js";
 import { ACQUIRE, CLOSE, RECLAIM, RENEW, YIELD } from "./leases/lease-scripts.js";
 import { storeNowArgumentOf } from "./store-time.js";
-
-/**
- * Where a Redis lease store keeps the execution ids it is asked to keep (#591): never in Redis —
- * the maintainer's decision for #527 keeps them with the durable rows (PostgreSQL, MongoDB): the
- * application's own durable lease store, which keeps them forever with one insert-if-absent.
- */
-export type KeptExecutionIds = Pick<ExecutionLeaseRepository, "claimExecutionId">;
 
 const Taken = z.union([
   z.tuple([z.number(), z.number(), z.number()]),
@@ -38,24 +34,25 @@ const remainingOf = (value: number): Milliseconds => Math.max(0, Math.floor(valu
  * and every take and renewal answers `remaining` on that clock. Epochs only grow: a lease key is
  * never deleted nor expired, and the connection refuses a server that may evict keys.
  *
- * **Coordination only** (`static backend = "redis"`): the core's one-backend check (#526) refuses a
- * fenced-effect or outbound-call store on another backend beside it — their write must check the
- * lease in its own transaction, which Redis and PostgreSQL cannot share. An application on these
- * leases lists none of them.
+ * **Coordination only** (`static store = { backend: "redis" }`): the core's one-backend check
+ * (#526) refuses a fenced-effect or outbound-call store on another backend beside it — their write
+ * must check the lease in its own transaction, which Redis and PostgreSQL cannot share. An
+ * application on these leases lists none of them.
  *
- * **The kept ids** live where the application's durable rows live: a subclass gives the store that
- * keeps them (its PostgreSQL or MongoDB lease store) — the class is abstract so that it is chosen:
+ * **The execution ids** it hands out (agbossjs/agboss#591) are never kept in Redis
+ * (agbossjs/agboss#527): they live where the application's durable rows live — the store the
+ * application gives under `EXECUTION_ID_STORE` (agbossjs/agboss#891), its PostgreSQL or MongoDB
+ * lease store, created by the container under that token only (no second lease store, no `new`):
  *
  * ```ts
- * @Injectable({ deps: [RedisConnection, StoreClock, ApplicationContext, PostgresConnection] })
- * class AppExecutionLeases extends RedisExecutionLeaseRepository {
- *   constructor(redis: RedisConnection, clock: StoreClock, app: ApplicationContext, pg: PostgresConnection) {
- *     super(redis, clock, app, new PostgresExecutionLeaseRepository(pg, clock, app));
- *   }
- * }
+ * providers: [
+ *   ...REDIS_COORDINATION_STORES,
+ *   provide(EXECUTION_ID_STORE, PostgresExecutionLeaseRepository),
+ * ]
  * ```
  */
-export abstract class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
+@Injectable({ deps: [RedisConnection, StoreClock, ApplicationContext, EXECUTION_ID_STORE] })
+export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
   /** Its own backend: no fencing store of another one may be listed beside it (#526). */
   static override readonly store: StoreDescriptor = { backend: "redis" };
 
@@ -63,7 +60,7 @@ export abstract class RedisExecutionLeaseRepository extends ExecutionLeaseReposi
     private readonly connection: RedisConnection,
     private readonly clock: StoreClock,
     private readonly applicationContext: ApplicationContext,
-    private readonly keptIds: KeptExecutionIds,
+    private readonly executionIds: ExecutionIdStore,
   ) {
     super();
   }
@@ -72,9 +69,9 @@ export abstract class RedisExecutionLeaseRepository extends ExecutionLeaseReposi
     return this.connection.ping();
   }
 
-  /** Kept by the durable store the subclass names, never in Redis (#527). */
+  /** Kept by the durable store under `EXECUTION_ID_STORE`, never in Redis (#527, #891). */
   claimExecutionId(identity: ExecutionIdentity): Promise<boolean> {
-    return this.keptIds.claimExecutionId(identity);
+    return this.executionIds.claimExecutionId(identity);
   }
 
   async acquire(

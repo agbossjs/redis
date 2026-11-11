@@ -4,19 +4,18 @@ import {
   BudgetPeriod,
   BudgetScope,
   type BudgetHandler,
-  Injectable,
-  StoreClock,
+  EXECUTION_ID_STORE,
+  provide,
+  SqliteExecutionLeaseRepository,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
-  ApplicationContext,
   start,
   type Class,
+  type Provider,
 } from "@agboss/core";
 import { WorkflowStartTextDto } from "@agboss/core/dto";
 import { usd, type Usd } from "@agboss/core/units";
-import { RedisConnection, RedisExecutionLeaseRepository } from "../../src/index.js";
-import { SharedKeptIds } from "../support/redis-store.js";
 import { LayoutEnvironment } from "./environments/layout.contract.js";
 
 /**
@@ -46,16 +45,12 @@ export class EchoWorkflowFinish {}
 })
 export class EchoWorkflow {}
 
-/** The kept ids of the layouts, shared by the instances of one test. */
-export const LAYOUT_KEPT_IDS = new SharedKeptIds();
-
-/** An application's Redis lease store: the kept ids in `LAYOUT_KEPT_IDS`, as a durable store would keep them. */
-@Injectable({ deps: [RedisConnection, StoreClock, ApplicationContext] })
-export class LayoutRedisExecutionLeaseRepository extends RedisExecutionLeaseRepository {
-  constructor(connection: RedisConnection, clock: StoreClock, application: ApplicationContext) {
-    super(connection, clock, application, LAYOUT_KEPT_IDS);
-  }
-}
+/**
+ * agbossjs/agboss#891 — the ids the Redis leases hand out, kept by a durable lease store under
+ * `EXECUTION_ID_STORE` (SQLite here; PostgreSQL's or MongoDB's in an application): the container
+ * creates it under the token only — no `new`, no second lease store.
+ */
+export const LAYOUT_EXECUTION_IDS = provide(EXECUTION_ID_STORE, SqliteExecutionLeaseRepository);
 
 @Budget({
   name: "layout-application-budget",
@@ -95,7 +90,7 @@ const BUDGETS = [LayoutApplicationBudget, LayoutTenantBudget, LayoutExecutionBud
 export class LayoutApplication {}
 
 /** An application of the echo workflow on `providers`. */
-export function layoutOf(providers: readonly Class[]): Class {
+export function layoutOf(providers: readonly Provider[]): Class {
   @Application({
     name: "layout-application",
     version: "1.0.0",

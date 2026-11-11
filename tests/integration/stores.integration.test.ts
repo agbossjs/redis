@@ -14,14 +14,14 @@ import {
 } from "@agboss/core";
 import { seconds } from "@agboss/core/units";
 import { afterAll, describe, expect, it } from "vitest";
-import { RedisChildExecutionQueueRepository, RedisRateLimitRepository } from "../../src/index.js";
+import {
+  RedisChildExecutionQueueRepository,
+  RedisExecutionLeaseRepository,
+  RedisRateLimitRepository,
+} from "../../src/index.js";
 import { keyOf } from "../../src/connection/scripts.js";
 import { TestApplicationContext } from "../support/application-context.js";
-import {
-  connectionOf,
-  testKeySpace,
-  TestRedisExecutionLeaseRepository,
-} from "../support/redis-store.js";
+import { connectionOf, testKeySpace } from "../support/redis-store.js";
 import { DURABLE_URL } from "../support/server.js";
 
 /**
@@ -47,7 +47,7 @@ describe.skipIf(DURABLE_URL === "")(
       space.idle.push(connection);
       return {
         connection,
-        leases: new TestRedisExecutionLeaseRepository(
+        leases: new RedisExecutionLeaseRepository(
           connection,
           decadesOffStoreClock(),
           new TestApplicationContext({}, instanceId),
@@ -168,8 +168,8 @@ describe.skipIf(DURABLE_URL === "")(
       const connection = await connectionOf(space);
       space.idle.push(connection);
 
-      await expect(connection.deployment()).resolves.toBeUndefined();
-      expect(await connection.durability()).toEqual({ problems: [], optedOut: false });
+      expect((await connection.requireSupportedTopology()).problems).toEqual([]);
+      expect(await connection.requireDurability()).toEqual({ problems: [] });
     });
   },
 );
