@@ -6,7 +6,7 @@ import { redisStore, testKeySpace } from "../../support/redis-store.js";
 import { callerStoreClockOf, ReadThenWriteLeaseRepository } from "./sabotage-stores.js";
 import { TestRedisExecutionLeaseRepository } from "../../support/redis-store.js";
 
-const WITHOUT = ["executionLeaseEvent", "fencedEffect", "outboundCall"] as const;
+const WITHOUT = ["executionAuditLog", "fencedEffect", "outboundCall"] as const;
 const BUDGET = { depth: 6, walks: 20, walkDepth: 20 };
 
 const callerClock = testKeySpace("sabotage-caller-clock");

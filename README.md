@@ -3,7 +3,7 @@
 Redis coordination stores for [AGBoss](https://github.com/agbossjs/agboss): several application
 instances share execution leases, the child queue and provider rate limits on one Redis — fast,
 short-lived coordination state. Not a whole application: threads, checkpoints, fenced effects,
-outbound calls, pauses, records, the lease log, the kept execution ids and the A2A tasks stay in
+outbound calls, pauses, records, the audit log, the kept execution ids and the A2A tasks stay in
 PostgreSQL or MongoDB (agbossjs/agboss#527, #693, #824).
 
 > Not published to npm yet: it ships with the 0.1.1 release.
@@ -17,8 +17,8 @@ PostgreSQL or MongoDB (agbossjs/agboss#527, #693, #824).
 | `RateLimitRepository`           | `RedisRateLimitRepository`                 | slots a sorted set (slot → its end), windows a sorted set and a hash, pauses a string — each operation one script                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 Why these and no other: the core's one-backend rule (#526) binds the fenced-effect and outbound-call
-stores to the lease store; rate limits, the queue and the lease log are on any backend. Of those,
-rate limits and the queue are pure coordination — a slot, a window, a queued child. The lease log
+stores to the lease store; rate limits, the queue and the audit log are on any backend. Of those,
+rate limits and the queue are pure coordination — a slot, a window, a queued child. The audit log
 is a record (its rows go into exported history), the trees keep undo marks (P5), the mesh store
 keeps answers: they belong with the durable rows. So do the A2A tasks an application serves
 (agbossjs/agboss#824): a task and the messages accepted for it are what a resent `messageId` is

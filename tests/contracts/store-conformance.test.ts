@@ -9,8 +9,8 @@ import { leasesOf, redisStore, testKeySpace } from "../support/redis-store.js";
  * lease, child-queue and rate-limit contracts, each as `<contract> (Redis)`, the `store set
  * (Redis)` cases, and the interleaving explorer on the lease store alone (`interleavings (Redis)`,
  * #694: every schedule of two instances, seeded walks of three, every clock skew, both #520
- * races). A set of coordination stores: no fenced-effect, outbound-call or lease-log store here —
- * their guarantee needs the lease in the write's own transaction (#526, ADR-0026), and the lease log
+ * races). A set of coordination stores: no fenced-effect, outbound-call or audit-log store here —
+ * their guarantee needs the lease in the write's own transaction (#526, ADR-0026), and the audit log
  * is a record, kept with the application's durable rows (#527).
  */
 const space = testKeySpace("conformance");
@@ -23,7 +23,7 @@ storeConformance({
   name: "Redis",
   interleavings: { depth: 8, walks: 200, timeLimit: minutes(15) },
   reset: () => space.reset(),
-  without: ["executionLeaseEvent", "fencedEffect", "outboundCall"],
+  without: ["executionAuditLog", "fencedEffect", "outboundCall"],
   stores: {
     executionLease: redisStore(space, (connection, seam) => leasesOf(space, connection, seam)),
     // agbossjs/agboss#831: the queue has a watch (LISTEN / a change stream / pub/sub): declared

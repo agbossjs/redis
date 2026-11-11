@@ -6,7 +6,7 @@ import {
   SqliteConnection,
   SqliteCostLedgerRepository,
   SqliteExecutionHistoryRepository,
-  SqliteExecutionLeaseEventRepository,
+  SqliteExecutionAuditLogRepository,
   SqliteExecutionLeaseRepository,
   SqliteExecutionRecordRepository,
   SqliteExecutionTreeRepository,
@@ -28,7 +28,7 @@ import {
  * queue and rate limits (the tree slots of the fixture's `AnyInstance` children) on the test's
  * Redis, under a key prefix of the scenario's own (`AGBOSS_FAULT_REDIS_PREFIX`, set by the
  * target's reset before the pods start), and the core's SQLite stores — leases, fenced effects,
- * outbound calls, the lease log, records, trees, history, pauses, checkpoints — on the scenario's
+ * outbound calls, the audit log, records, trees, history, pauses, checkpoints — on the scenario's
  * file (`AGBOSS_FAULT_DATABASE_URL`, cut by the suite's store outages). The fencing stores stay on
  * one transactional backend with their leases (#526): a Redis lease store cannot back the
  * fixture's fenced charge, and is explored by `storeConformance` and the crash test instead.
@@ -53,7 +53,7 @@ export const faultStores: FaultStoreSet<DatabaseSync> = {
     SqliteCheckpointSaver,
     SqliteCostLedgerRepository,
     SqliteExecutionHistoryRepository,
-    SqliteExecutionLeaseEventRepository,
+    SqliteExecutionAuditLogRepository,
     SqliteExecutionLeaseRepository,
     SqliteExecutionRecordRepository,
     SqliteExecutionTreeRepository,
