@@ -2,7 +2,7 @@
 
 AGBoss's coordination stores on Redis (agbossjs/agboss#527, #693): execution leases, the child
 queue and rate limits shared by several application instances. Only coordination stores — threads,
-checkpoints, fenced effects, outbound calls, pauses, records, the lease log and the kept execution
+checkpoints, fenced effects, outbound calls, pauses, records, the audit log and the kept execution
 ids stay in PostgreSQL or MongoDB; the core's one-backend check (#526) refuses a fenced-effect or
 outbound-call store of another backend beside the Redis leases. The package implements the core's
 infrastructure contracts; it never changes them.
