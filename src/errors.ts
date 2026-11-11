@@ -13,7 +13,7 @@ import { AGBossError } from "@agboss/core";
  * `acknowledged-writes-may-be-lost`). The URL itself is never printed.
  */
 export class RedisSettingsError extends AGBossError {
-  static override readonly code: string = "redis.settings-invalid";
+  static override readonly code = "redis.settings-invalid" as const;
   override name = "RedisSettingsError";
 }
 
@@ -23,7 +23,7 @@ export class RedisSettingsError extends AGBossError {
  * out again; no opt-out — run one durable primary without automatic failover.
  */
 export class RedisDeploymentError extends AGBossError {
-  static override readonly code: string = "redis.deployment-unsupported";
+  static override readonly code = "redis.deployment-unsupported" as const;
   override name = "RedisDeploymentError";
   /** Each way the server falls short of one primary. */
   readonly problems: readonly string[];
@@ -43,7 +43,7 @@ export class RedisDeploymentError extends AGBossError {
  * "acknowledged-writes-may-be-lost"` to accept that loss knowingly.
  */
 export class RedisDurabilityError extends AGBossError {
-  static override readonly code: string = "redis.durability-insufficient";
+  static override readonly code = "redis.durability-insufficient" as const;
   override name = "RedisDurabilityError";
   /** Each setting found short, with what it loses and what to set. */
   readonly problems: readonly string[];
