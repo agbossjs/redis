@@ -77,7 +77,7 @@ export interface RedisConnectionSettings {
 export class RedisDeploymentError extends AGBossError {
     constructor(problems: readonly string[]);
     // (undocumented)
-    static readonly code: string;
+    static readonly code: "redis.deployment-unsupported";
     // (undocumented)
     name: string;
     readonly problems: readonly string[];
@@ -94,7 +94,7 @@ export interface RedisDurability {
 export class RedisDurabilityError extends AGBossError {
     constructor(problems: readonly string[]);
     // (undocumented)
-    static readonly code: string;
+    static readonly code: "redis.durability-insufficient";
     // (undocumented)
     name: string;
     readonly problems: readonly string[];
@@ -150,7 +150,7 @@ export class RedisRateLimitRepository extends RateLimitRepository {
 // @public
 export class RedisSettingsError extends AGBossError {
     // (undocumented)
-    static readonly code: string;
+    static readonly code: "redis.settings-invalid";
     // (undocumented)
     name: string;
 }
