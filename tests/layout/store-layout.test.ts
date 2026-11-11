@@ -11,21 +11,23 @@
  */
 import {
   createApp,
+  ExecutionLeaseRepository,
   GraphRuleError,
   SqliteConnection,
   SqliteExecutionLeaseRepository,
   SqliteFencedEffectRepository,
   SqliteOutboundCallRepository,
-  type Class,
+  type Provider,
 } from "@agboss/core";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, expectTypeOf, it } from "vitest";
 import {
+  REDIS_COORDINATION_STORES,
   RedisChildExecutionQueueRepository,
   RedisConnection,
   RedisExecutionLeaseRepository,
   RedisRateLimitRepository,
 } from "../../src/index.js";
-import { layoutOf, LayoutRedisExecutionLeaseRepository } from "../fixtures/layout.application.js";
+import { LAYOUT_EXECUTION_IDS, layoutOf } from "../fixtures/layout.application.js";
 import { DURABLE_URL } from "../support/server.js";
 
 beforeAll(() => {
@@ -36,7 +38,7 @@ beforeAll(() => {
 });
 
 /** The store-backend violations of assembling `providers`, as `[code] message`. */
-async function backendViolationsOf(providers: readonly Class[]): Promise<readonly string[]> {
+async function backendViolationsOf(providers: readonly Provider[]): Promise<readonly string[]> {
   const error: unknown = await createApp(layoutOf(providers), { env: "layout" }).then(
     async (app) => {
       await app.close();
@@ -52,7 +54,7 @@ async function backendViolationsOf(providers: readonly Class[]): Promise<readonl
     .map((found) => `[${found.code}] ${found.message}`);
 }
 
-const LEASES = "LayoutRedisExecutionLeaseRepository";
+const LEASES = "RedisExecutionLeaseRepository";
 
 const mismatch = (
   fencing: string,
@@ -68,28 +70,28 @@ const mismatch = (
   );
 
 describe("agbossjs/agboss#693: Redis leases with a fencing store of another backend fail assembly", () => {
-  it("the Redis lease store declares its own backend, its subclasses inherit it", () => {
+  it("the Redis lease store declares its own backend", () => {
     expect(RedisExecutionLeaseRepository.store.backend).toBe("redis");
-    expect(LayoutRedisExecutionLeaseRepository.store.backend).toBe("redis");
   });
 
   it.each([
     [SqliteFencedEffectRepository, "SqliteFencedEffectRepository"],
     [SqliteOutboundCallRepository, "SqliteOutboundCallRepository"],
-  ] as const)("Redis leases with %o → store-backend-mismatch", async (store, name) => {
-    expect(
-      await backendViolationsOf([
-        RedisConnection,
-        SqliteConnection,
-        LayoutRedisExecutionLeaseRepository,
-        store,
-      ]),
-    ).toEqual([mismatch(name, "sqlite", LEASES, "redis")]);
-  });
+  ] as const)(
+    "AC2: Redis leases (their ids under EXECUTION_ID_STORE) with %o → store-backend-mismatch",
+    async (store, name) => {
+      expect(
+        await backendViolationsOf([
+          ...[RedisConnection, SqliteConnection, RedisExecutionLeaseRepository],
+          ...[LAYOUT_EXECUTION_IDS, store],
+        ]),
+      ).toEqual([mismatch(name, "sqlite", LEASES, "redis")]);
+    },
+  );
 
   it("both, at once: each named", async () => {
     const violations = await backendViolationsOf([
-      ...[RedisConnection, SqliteConnection, LayoutRedisExecutionLeaseRepository],
+      ...[RedisConnection, SqliteConnection, RedisExecutionLeaseRepository, LAYOUT_EXECUTION_IDS],
       ...[SqliteFencedEffectRepository, SqliteOutboundCallRepository],
     ]);
     expect(violations).toHaveLength(2);
@@ -102,7 +104,7 @@ describe.skipIf(DURABLE_URL === "")(
     it("Redis leases, queue and rate limits, no fencing store listed", async () => {
       expect(
         await backendViolationsOf([
-          ...[RedisConnection, LayoutRedisExecutionLeaseRepository],
+          ...[RedisConnection, RedisExecutionLeaseRepository, LAYOUT_EXECUTION_IDS],
           ...[RedisChildExecutionQueueRepository, RedisRateLimitRepository],
         ]),
       ).toEqual([]);
@@ -116,6 +118,58 @@ describe.skipIf(DURABLE_URL === "")(
           ...[SqliteFencedEffectRepository, SqliteOutboundCallRepository],
         ]),
       ).toEqual([]);
+    });
+  },
+);
+
+describe("agbossjs/agboss#891 AC2: the Redis lease store is concrete, its ids under EXECUTION_ID_STORE", () => {
+  it("AC2: the class is not abstract: the container can create it", () => {
+    expectTypeOf(RedisExecutionLeaseRepository).toExtend<
+      new (...args: never[]) => RedisExecutionLeaseRepository
+    >();
+    // its four deps: the connection, the store's clock, the application, EXECUTION_ID_STORE
+    expect(RedisExecutionLeaseRepository.length).toBe(4);
+  });
+});
+
+describe.skipIf(DURABLE_URL === "")(
+  "agbossjs/agboss#891 AC2/AC3: Redis leases on a real application's container",
+  () => {
+    it("AC2: provide(EXECUTION_ID_STORE, SqliteExecutionLeaseRepository) — no [di.ambiguous-implementation], no new, the ids kept there", async () => {
+      const app = await createApp(
+        layoutOf([RedisConnection, RedisExecutionLeaseRepository, LAYOUT_EXECUTION_IDS]),
+        { env: "layout" },
+      );
+      try {
+        const leases = app.resolve(ExecutionLeaseRepository);
+        const identity = { tenantId: "default", executionId: `ids-${String(process.pid)}` };
+
+        expect(leases).toBeInstanceOf(RedisExecutionLeaseRepository);
+        expect(await leases.claimExecutionId(identity)).toBe(true);
+        expect(await leases.claimExecutionId(identity)).toBe(false);
+        expect(await app.resolve(SqliteExecutionLeaseRepository).claimExecutionId(identity)).toBe(
+          false,
+        );
+      } finally {
+        await app.close();
+      }
+    });
+
+    it("AC3: ...REDIS_COORDINATION_STORES assembles beside the ids' durable store", async () => {
+      expect(REDIS_COORDINATION_STORES).toEqual([
+        RedisExecutionLeaseRepository,
+        RedisChildExecutionQueueRepository,
+        RedisRateLimitRepository,
+      ]);
+      const app = await createApp(
+        layoutOf([RedisConnection, ...REDIS_COORDINATION_STORES, LAYOUT_EXECUTION_IDS]),
+        { env: "layout" },
+      );
+      try {
+        expect(app.resolve(ExecutionLeaseRepository)).toBeInstanceOf(RedisExecutionLeaseRepository);
+      } finally {
+        await app.close();
+      }
     });
   },
 );

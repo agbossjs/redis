@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { type ExecutionIdentity, type ExecutionLeaseRepository } from "@agboss/core";
+import {
+  type ExecutionIdentity,
+  type ExecutionIdStore,
+  type ExecutionLeaseRepository,
+} from "@agboss/core";
 import type { ContractTarget, StoreInstanceContext } from "@agboss/core/testing/contracts";
 import { RedisConnection, RedisExecutionLeaseRepository } from "../../src/index.js";
-import type { KeptExecutionIds } from "../../src/index.js";
 import { DURABLE_URL } from "./server.js";
 
 /**
@@ -24,9 +27,10 @@ export interface TestKeySpace {
 
 /**
  * The kept execution ids of the tests: shared by every instance of the file, as the application's
- * durable lease store keeps them (#591) — never in Redis (#527). One insert-if-absent by the id.
+ * durable lease store under `EXECUTION_ID_STORE` keeps them (#591, #891) — never in Redis (#527).
+ * One insert-if-absent by the id.
  */
-export class SharedKeptIds implements KeptExecutionIds {
+export class SharedKeptIds implements ExecutionIdStore {
   readonly ids = new Map<string, string>();
 
   claimExecutionId({ executionId, tenantId }: ExecutionIdentity): Promise<boolean> {
@@ -35,9 +39,6 @@ export class SharedKeptIds implements KeptExecutionIds {
     return Promise.resolve(true);
   }
 }
-
-/** The lease store of the tests: Redis leases, the kept ids in `SharedKeptIds`. */
-export class TestRedisExecutionLeaseRepository extends RedisExecutionLeaseRepository {}
 
 /** Every key under `prefix` removed (SCAN + UNLINK). */
 async function removeKeys(connection: RedisConnection, prefix: string): Promise<void> {
@@ -112,9 +113,4 @@ export const leasesOf = (
   connection: RedisConnection,
   seam: StoreInstanceContext,
 ): ExecutionLeaseRepository =>
-  new TestRedisExecutionLeaseRepository(
-    connection,
-    seam.storeClock,
-    seam.application,
-    space.keptIds,
-  );
+  new RedisExecutionLeaseRepository(connection, seam.storeClock, seam.application, space.keptIds);

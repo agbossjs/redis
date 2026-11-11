@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { RedisDeploymentError } from "../../src/index.js";
 import {
   deploymentProblemsOf,
-  deploymentProblemsOfServer,
   infoFieldsOf,
   requireOnePrimary,
+  topologyOfServer,
   type InfoOf,
 } from "../../src/connection/deployment.js";
 
@@ -29,11 +29,23 @@ describe("the deployment check: one primary", () => {
     });
   });
 
-  it("a standalone primary passes", async () => {
-    expect(await deploymentProblemsOfServer(infoOf(PRIMARY, STANDALONE))).toEqual([]);
+  it("AC4: a standalone primary passes — its topology a report: the role, no cluster, no problem", async () => {
+    const topology = await topologyOfServer(infoOf(PRIMARY, STANDALONE));
+
+    expect(topology).toEqual({ role: "master", isClusterEnabled: false, problems: [] });
     expect(() => {
-      requireOnePrimary([]);
+      requireOnePrimary(topology);
     }).not.toThrow();
+  });
+
+  it("AC4: topology() is a query: a replica in a cluster is reported, never thrown", async () => {
+    const topology = await topologyOfServer(
+      infoOf("role:slave\r\n", "# Cluster\r\ncluster_enabled:1\r\n"),
+    );
+
+    expect(topology.role).toBe("slave");
+    expect(topology.isClusterEnabled).toBe(true);
+    expect(topology.problems).toHaveLength(2);
   });
 
   it("a replica is refused: the leases are written on the primary only", () => {
@@ -61,15 +73,23 @@ describe("the deployment check: one primary", () => {
     const refusing: InfoOf = async () => {
       throw new Error("NOPERM this user has no permissions to run the 'info' command");
     };
-    expect(await deploymentProblemsOfServer(refusing)).toEqual([
-      expect.stringMatching(/^INFO replication \/ cluster failed \(NOPERM .*allow INFO/u),
-    ]);
+    expect(await topologyOfServer(refusing)).toEqual({
+      role: undefined,
+      isClusterEnabled: false,
+      problems: [
+        expect.stringMatching(/^INFO replication \/ cluster failed \(NOPERM .*allow INFO/u),
+      ],
+    });
   });
 
-  it("problems are RedisDeploymentError, with no opt-out", () => {
+  it("AC4: problems are RedisDeploymentError ({ problems }), with no opt-out", () => {
     let thrown: unknown;
     try {
-      requireOnePrimary(["the server's role is slave"]);
+      requireOnePrimary({
+        role: "slave",
+        isClusterEnabled: false,
+        problems: ["the server's role is slave"],
+      });
     } catch (error) {
       thrown = error;
     }

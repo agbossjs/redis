@@ -8,12 +8,13 @@ import {
 import { createClient } from "@redis/client";
 import { RedisSettingsError } from "../errors.js";
 import {
+  durabilityOf,
   durabilityProblemsOfServer,
-  requireDurability,
+  requireDurable,
   type RedisDurability,
   type RedisDurabilityOptOut,
 } from "./durability.js";
-import { deploymentProblemsOfServer, requireOnePrimary } from "./deployment.js";
+import { requireOnePrimary, topologyOfServer, type RedisTopology } from "./deployment.js";
 import {
   DEFAULT_KEY_PREFIX,
   settingsOfEnvironment,
@@ -129,29 +130,54 @@ export class RedisConnection implements OnInit, OnDestroy {
    * A new client on the same server for pub/sub (`SUBSCRIBE` takes a connection over), not
    * connected: its owner connects and closes it. Its first connect rejects at once when the server
    * does not answer; once ready, a dropped connection reconnects 1 s, 2 s, … at most 30 s apart and
-   * subscribes again before it is ready (agbossjs/agboss#777).
+   * subscribes again before it is ready (agbossjs/agboss#777). The child queue's watch only — not
+   * part of the package's API (agbossjs/agboss#891).
+   *
+   * @internal
    */
   subscriber(): RedisClient {
     return clientOf(this.#url, subscriberReconnectStrategyOf);
   }
 
   /**
-   * The server's durability now (`CONFIG GET appendonly` / `appendfsync`): rejects with
-   * `RedisDurabilityError` when it falls short and no opt-out accepts that.
+   * The server's durability now (`CONFIG GET appendonly`, `appendfsync`, …), a report: each
+   * setting found short and the opt-out given, if any. Never rejects for a short server
+   * (agbossjs/agboss#891: `requireDurability()` does).
    */
   async durability(): Promise<RedisDurability> {
     const problems = await durabilityProblemsOfServer((parameter) =>
       this.client.configGet(parameter),
     );
-    return requireDurability(problems, this.#optOut);
+    return durabilityOf(problems, this.#optOut);
   }
 
   /**
-   * The server is one primary (`INFO replication` / `cluster`): rejects with
-   * `RedisDeploymentError` for a replica, a cluster, or an `INFO` it may not read. No opt-out.
+   * Rejects with `RedisDurabilityError` when the server can lose an acknowledged write and no
+   * opt-out accepts that; else resolves with the report (`durability()`).
    */
-  async deployment(): Promise<void> {
-    requireOnePrimary(await deploymentProblemsOfServer((section) => this.client.info(section)));
+  async requireDurability(): Promise<RedisDurability> {
+    const durability = await this.durability();
+    requireDurable(durability);
+    return durability;
+  }
+
+  /**
+   * The server's deployment now (`INFO replication` / `cluster`), a report: its role, cluster
+   * mode and each way it falls short of one primary. Never rejects for an unsupported server
+   * (agbossjs/agboss#891: `requireSupportedTopology()` does).
+   */
+  topology(): Promise<RedisTopology> {
+    return topologyOfServer((section) => this.client.info(section));
+  }
+
+  /**
+   * Rejects with `RedisDeploymentError` for a replica, a cluster, or an `INFO` it may not read —
+   * no opt-out; else resolves with the report (`topology()`).
+   */
+  async requireSupportedTopology(): Promise<RedisTopology> {
+    const topology = await this.topology();
+    requireOnePrimary(topology);
+    return topology;
   }
 
   /** One `PING`: every Redis store's `ping()`. Rejects when the server does not answer. */
@@ -166,8 +192,8 @@ export class RedisConnection implements OnInit, OnDestroy {
   async onInit(): Promise<void> {
     await this.client.connect();
     try {
-      await this.deployment();
-      await this.durability();
+      await this.requireSupportedTopology();
+      await this.requireDurability();
     } catch (error) {
       await this.onDestroy();
       throw error;

@@ -17,6 +17,12 @@ export class RedisSettingsError extends AGBossError {
   override name = "RedisSettingsError";
 }
 
+/** What a start check's error is made of (agbossjs/agboss#891): the problems it found. */
+export interface RedisProblemsOptions {
+  /** Each way the server falls short, with what it loses and what to set. */
+  readonly problems: readonly string[];
+}
+
 /**
  * The server is not one primary (agbossjs/agboss#693 AC4): a replica, a cluster, or a server whose
  * `INFO` cannot be read. A failover to an asynchronous replica can hand an acknowledged lease epoch
@@ -28,9 +34,9 @@ export class RedisDeploymentError extends AGBossError {
   /** Each way the server falls short of one primary. */
   readonly problems: readonly string[];
 
-  constructor(problems: readonly string[]) {
-    super(`the Redis stores need one durable primary — ${problems.join("; ")}`);
-    this.problems = problems;
+  constructor(options: RedisProblemsOptions) {
+    super(`the Redis stores need one durable primary — ${options.problems.join("; ")}`);
+    this.problems = options.problems;
   }
 }
 
@@ -48,10 +54,10 @@ export class RedisDurabilityError extends AGBossError {
   /** Each setting found short, with what it loses and what to set. */
   readonly problems: readonly string[];
 
-  constructor(problems: readonly string[]) {
+  constructor(options: RedisProblemsOptions) {
     super(
-      `the Redis server can lose an acknowledged write — ${problems.join("; ")}. Set them on the server, or opt out knowingly: redisDurabilityOptOut: "acknowledged-writes-may-be-lost"`,
+      `the Redis server can lose an acknowledged write — ${options.problems.join("; ")}. Set them on the server, or opt out knowingly: redisDurabilityOptOut: "acknowledged-writes-may-be-lost"`,
     );
-    this.problems = problems;
+    this.problems = options.problems;
   }
 }

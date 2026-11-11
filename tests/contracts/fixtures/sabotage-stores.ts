@@ -1,4 +1,5 @@
 import {
+  type ExecutionIdStore,
   StoreClock,
   StoreTimeSource,
   type ApplicationContext,
@@ -6,10 +7,8 @@ import {
   type ExecutionLease,
 } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
-import type { RedisConnection } from "../../../src/index.js";
-import type { KeptExecutionIds } from "../../../src/index.js";
+import { RedisExecutionLeaseRepository, type RedisConnection } from "../../../src/index.js";
 import { keyOf } from "../../../src/connection/scripts.js";
-import { TestRedisExecutionLeaseRepository } from "../../support/redis-store.js";
 
 /**
  * agbossjs/agboss#693 AC3 — Redis lease stores broken the two ways a port to Redis gets wrong, each
@@ -26,12 +25,12 @@ export const callerStoreClockOf = (clock: Clock): StoreClock =>
   new StoreClock(StoreTimeSource.Host, clock);
 
 /** A lease store whose `acquire` reads the row, then writes it: check-then-write. */
-export class ReadThenWriteLeaseRepository extends TestRedisExecutionLeaseRepository {
+export class ReadThenWriteLeaseRepository extends RedisExecutionLeaseRepository {
   constructor(
     private readonly redis: RedisConnection,
     private readonly time: StoreClock,
     private readonly application: ApplicationContext,
-    keptIds: KeptExecutionIds,
+    keptIds: ExecutionIdStore,
   ) {
     super(redis, time, application, keptIds);
   }

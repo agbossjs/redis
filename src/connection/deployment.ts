@@ -43,20 +43,43 @@ export function deploymentProblemsOf(
   return problems;
 }
 
-/** The deployment problems of the server `info` asks; a refused `INFO` is a problem too. */
-export async function deploymentProblemsOfServer(info: InfoOf): Promise<string[]> {
+/**
+ * What the server says of its deployment (agbossjs/agboss#891: a query, it never throws): its
+ * replication `role` and whether cluster mode is on, as `INFO` gives them (`undefined` when not
+ * given), and each way it falls short of one primary — empty on a supported server.
+ */
+export interface RedisTopology {
+  /** `INFO replication`'s `role`: `master` on a primary, `slave` on a replica. */
+  readonly role: string | undefined;
+  /** `INFO cluster`'s `cluster_enabled` is `1`. */
+  readonly isClusterEnabled: boolean;
+  /** Each way it falls short of one primary; a refused `INFO` is one too. Empty when supported. */
+  readonly problems: readonly string[];
+}
+
+/** The topology of the server `info` asks; a refused `INFO` is a problem, never a pass. */
+export async function topologyOfServer(info: InfoOf): Promise<RedisTopology> {
   try {
     const [replication, cluster] = await Promise.all([info("replication"), info("cluster")]);
-    return deploymentProblemsOf(infoFieldsOf(replication), infoFieldsOf(cluster));
+    const [replicationFields, clusterFields] = [infoFieldsOf(replication), infoFieldsOf(cluster)];
+    return {
+      role: replicationFields.role,
+      isClusterEnabled: clusterFields.cluster_enabled === "1",
+      problems: deploymentProblemsOf(replicationFields, clusterFields),
+    };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    return [
-      `INFO replication / cluster failed (${reason}): the deployment cannot be verified — allow INFO for the stores' user`,
-    ];
+    return {
+      role: undefined,
+      isClusterEnabled: false,
+      problems: [
+        `INFO replication / cluster failed (${reason}): the deployment cannot be verified — allow INFO for the stores' user`,
+      ],
+    };
   }
 }
 
-/** The start check's verdict on the deployment: no opt-out — a replica or a cluster is refused. */
-export function requireOnePrimary(problems: readonly string[]): void {
-  if (problems.length > 0) throw new RedisDeploymentError(problems);
+/** The start check's verdict on the topology: no opt-out — a replica or a cluster is refused. */
+export function requireOnePrimary(topology: RedisTopology): void {
+  if (topology.problems.length > 0) throw new RedisDeploymentError({ problems: topology.problems });
 }

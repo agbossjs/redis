@@ -10,11 +10,11 @@ PostgreSQL or MongoDB (agbossjs/agboss#527, #693, #824).
 
 ## The stores
 
-| Contract                        | Store                                      | How it maps to Redis                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ExecutionLeaseRepository`      | `RedisExecutionLeaseRepository` (abstract) | one hash per tree; every operation one Lua script; expiry by the server's `TIME` inside the script; epochs only grow                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `ChildExecutionQueueRepository` | `RedisChildExecutionQueueRepository`       | a hash per child, one sorted set of the queued (deepest first, then longest waiting); save, claim, complete each one script; the depth (`countByStatus`) one script over the queued by time and the running, kept by the same scripts; the watch (`watchQueued`, agbossjs/agboss#777): the save script publishes on `<prefix>child-queued`, each instance subscribes on a connection of its own — a child another instance queued is claimed at once, not at the 30 s sweep; a dropped subscription reconnects (1 s doubling, at most 30 s), subscribes again and wakes once, the sweep the floor |
-| `RateLimitRepository`           | `RedisRateLimitRepository`                 | slots a sorted set (slot → its end), windows a sorted set and a hash, pauses a string — each operation one script                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Contract                        | Store                                | How it maps to Redis                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ExecutionLeaseRepository`      | `RedisExecutionLeaseRepository`      | one hash per tree; every operation one Lua script; expiry by the server's `TIME` inside the script; epochs only grow                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `ChildExecutionQueueRepository` | `RedisChildExecutionQueueRepository` | a hash per child, one sorted set of the queued (deepest first, then longest waiting); save, claim, complete each one script; the depth (`countByStatus`) one script over the queued by time and the running, kept by the same scripts; the watch (`watchQueued`, agbossjs/agboss#777): the save script publishes on `<prefix>child-queued`, each instance subscribes on a connection of its own — a child another instance queued is claimed at once, not at the 30 s sweep; a dropped subscription reconnects (1 s doubling, at most 30 s), subscribes again and wakes once, the sweep the floor |
+| `RateLimitRepository`           | `RedisRateLimitRepository`           | slots a sorted set (slot → its end), windows a sorted set and a hash, pauses a string — each operation one script                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 Why these and no other: the core's one-backend rule (#526) binds the fenced-effect and outbound-call
 stores to the lease store; rate limits, the queue and the audit log are on any backend. Of those,
@@ -51,28 +51,29 @@ fenced-effect or outbound-call store fails assembly with `[application.store-bac
   applications that make no fenced write or outbound call; their other stores (records, trees,
   pauses, checkpoints) on PostgreSQL or MongoDB.
 
-## Kept execution ids
+## Listing the stores, and the kept execution ids
 
-Every execution id is kept forever by the lease store (`claimExecutionId`, #591). Redis
-keeps none: `RedisExecutionLeaseRepository` is abstract and takes the store that keeps them — your
-durable lease store, never listed itself:
+`REDIS_COORDINATION_STORES` is every store of this package — the leases, the child queue, the rate
+limits — to spread into `@Application({ providers })` (agbossjs/agboss#891); `agboss describe` still
+names each one. They are **coordination only**: pair them with the durable stores of PostgreSQL or
+MongoDB that leave the coordination and fencing stores out (`POSTGRES_DURABLE_STORES`,
+`MONGODB_DURABLE_STORES`), and list no fenced-effect or outbound-call store.
+
+Every execution id is kept forever by the lease store (`claimExecutionId`, #591). Redis keeps none:
+`RedisExecutionLeaseRepository` injects `EXECUTION_ID_STORE`, and the application gives it its
+durable lease store by class — created by the container under that token only, so it is neither a
+second lease store (`[di.ambiguous-implementation]`) nor made with `new`:
 
 ```ts
-import { ApplicationContext, Injectable, StoreClock } from "@agboss/core";
-import { PostgresConnection, PostgresExecutionLeaseRepository } from "@agboss/postgres";
-import { RedisConnection, RedisExecutionLeaseRepository } from "@agboss/redis";
+import { EXECUTION_ID_STORE, provide } from "@agboss/core";
+import { MONGODB_DURABLE_STORES, MongoConnection, MongoExecutionLeaseRepository } from "@agboss/mongodb";
+import { REDIS_COORDINATION_STORES, RedisConnection } from "@agboss/redis";
 
-@Injectable({ deps: [RedisConnection, StoreClock, ApplicationContext, PostgresConnection] })
-export class AppExecutionLeases extends RedisExecutionLeaseRepository {
-  constructor(
-    redis: RedisConnection,
-    clock: StoreClock,
-    app: ApplicationContext,
-    postgres: PostgresConnection,
-  ) {
-    super(redis, clock, app, new PostgresExecutionLeaseRepository(postgres, clock, app));
-  }
-}
+// @Application({ …, providers: [
+//   MongoConnection, ...MONGODB_DURABLE_STORES,
+//   RedisConnection, ...REDIS_COORDINATION_STORES,
+//   provide(EXECUTION_ID_STORE, MongoExecutionLeaseRepository), // or PostgresExecutionLeaseRepository
+// ] })
 ```
 
 ## Required server settings
@@ -96,7 +97,8 @@ redis-server --appendonly yes --appendfsync always --no-appendfsync-on-rewrite n
 
 **The durability opt-out** names the guarantee given up and accepts no other value:
 `redisDurabilityOptOut: "acknowledged-writes-may-be-lost"`. With it a server short on the four
-settings starts, and `connection.durability()` reports `{ problems, optedOut: true }`. A crash can
+settings starts, and `connection.durability()` reports `{ problems, optOut:
+RedisDurabilityOptOut.AcknowledgedWritesMayBeLost }`. A crash can
 then lose an acknowledged epoch, and the next take grants it again: two holders of one fencing token
 (`tests/crash/durability-crash.test.ts` shows it). A replica or a cluster has no opt-out.
 
@@ -142,6 +144,13 @@ application instance. At `onInit` it connects and runs the start checks. If the 
 start fails after five quick retries instead of hanging; once connected, a dropped connection is
 retried indefinitely (an operation in flight rejects, and the core hands the tree over).
 
+Its checks are queries and assertions apart (agbossjs/agboss#891): `topology()` reports the
+server's `role`, whether cluster mode is on and each problem, `durability()` each durability setting
+found short and the opt-out given — neither throws; `requireSupportedTopology()` rejects with
+`RedisDeploymentError` (`redis.deployment-unsupported`), `requireDurability()` with
+`RedisDurabilityError` (`redis.durability-insufficient`, unless the opt-out accepts it) — what the
+start runs.
+
 ## Tests
 
 ```sh
@@ -162,7 +171,8 @@ npm run test:crash                                           # kills the test se
   and rate limits beside the core's SQLite fencing set.
 - `tests/crash/` — `docker kill -s KILL` on the server: with the required settings every epoch
   survives; with the AOF off (opted out) an epoch is granted twice.
-- `tests/layout/` — the one-backend rule refuses Redis leases beside another backend's fencing store.
+- `tests/layout/` — the one-backend rule refuses Redis leases beside another backend's fencing store;
+  the leases' ids kept under `provide(EXECUTION_ID_STORE, …)` on a real application's container.
 
 The integration tests need a durable Redis (`AGBOSS_REDIS_TEST_URL`), one with the defaults
 (`AGBOSS_REDIS_WEAK_TEST_URL`) and a replica (`AGBOSS_REDIS_REPLICA_TEST_URL`); the crash test the

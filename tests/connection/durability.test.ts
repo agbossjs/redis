@@ -4,7 +4,8 @@ import {
   DURABILITY_PARAMETERS,
   durabilityProblemsOf,
   durabilityProblemsOfServer,
-  requireDurability,
+  durabilityOf,
+  requireDurable,
   type ConfigGet,
 } from "../../src/connection/durability.js";
 
@@ -140,22 +141,30 @@ describe("durabilityProblemsOfServer: CONFIG GET on the server", () => {
   });
 });
 
-describe("requireDurability: the start check's verdict", () => {
-  it("no problem: durable, no opt-out used", () => {
-    expect(requireDurability([], undefined)).toEqual({ problems: [], optedOut: false });
+describe("AC4: durability is a report, requireDurable the start check's verdict", () => {
+  const OPT_OUT = RedisDurabilityOptOut.AcknowledgedWritesMayBeLost;
+
+  it("AC4: durable, no opt-out: no problem, no optOut in the report", () => {
+    const durability = durabilityOf([], undefined);
+
+    expect(durability).toEqual({ problems: [] });
+    expect(() => {
+      requireDurable(durability);
+    }).not.toThrow();
   });
 
-  it("no problem with an opt-out set: the opt-out is not used", () => {
-    expect(requireDurability([], RedisDurabilityOptOut.AcknowledgedWritesMayBeLost)).toEqual({
-      problems: [],
-      optedOut: false,
+  it("AC4: the report names the opt-out given, by its value, durable or not", () => {
+    expect(durabilityOf([], OPT_OUT)).toEqual({ problems: [], optOut: OPT_OUT });
+    expect(durabilityOf(["appendonly is no"], OPT_OUT)).toEqual({
+      problems: ["appendonly is no"],
+      optOut: OPT_OUT,
     });
   });
 
-  it("problems without the opt-out: RedisDurabilityError naming each and the opt-out", () => {
+  it("AC4: problems without the opt-out: RedisDurabilityError naming each and the opt-out", () => {
     let thrown: unknown;
     try {
-      requireDurability(["appendonly is no", "appendfsync is everysec"], undefined);
+      requireDurable(durabilityOf(["appendonly is no", "appendfsync is everysec"], undefined));
     } catch (error) {
       thrown = error;
     }
@@ -170,9 +179,9 @@ describe("requireDurability: the start check's verdict", () => {
     expect(thrown.name).toBe("RedisDurabilityError");
   });
 
-  it("problems with the opt-out: reported, not thrown — the loss accepted knowingly", () => {
-    expect(
-      requireDurability(["appendonly is no"], RedisDurabilityOptOut.AcknowledgedWritesMayBeLost),
-    ).toEqual({ problems: ["appendonly is no"], optedOut: true });
+  it("AC4: problems with the opt-out: reported, not thrown — the loss accepted knowingly", () => {
+    expect(() => {
+      requireDurable(durabilityOf(["appendonly is no"], OPT_OUT));
+    }).not.toThrow();
   });
 });
