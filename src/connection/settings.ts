@@ -60,13 +60,13 @@ export function settingsOfEnvironment(environment: unknown): RedisConnectionSett
     const problems = parsed.error.issues.map((issue) =>
       issue.path[0] === "redisUrl" && isUrlMissing ? MISSING_URL : issue.message,
     );
-    throw new RedisSettingsError(
-      `the Redis stores need their environment fields — ${problems.join("; ")}`,
-    );
+    throw new RedisSettingsError({
+      message: `the Redis stores need their environment fields — ${problems.join("; ")}`,
+    });
   }
   const { redisUrl, redisDurabilityOptOut, redisKeyPrefix } = parsed.data;
   const url = redisUrl.reveal();
-  if (url.length === 0) throw new RedisSettingsError("redisUrl is empty");
+  if (url.length === 0) throw new RedisSettingsError({ message: "redisUrl is empty" });
   return {
     url,
     durabilityOptOut: redisDurabilityOptOut,

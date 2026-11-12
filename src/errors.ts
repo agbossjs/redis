@@ -7,6 +7,12 @@ import { AGBossError } from "@agboss/core";
  * rules apply.
  */
 
+/** What a refused setting takes: the message, and what made it fail when it has a cause. */
+export interface RedisSettingsErrorOptions {
+  readonly message: string;
+  readonly cause?: unknown;
+}
+
 /**
  * The environment does not give what the Redis stores need: `redisUrl` (a `Secret` holding a
  * `redis://` or `rediss://` URL), and when set, `redisDurabilityOptOut` (exactly
@@ -14,13 +20,19 @@ import { AGBossError } from "@agboss/core";
  */
 export class RedisSettingsError extends AGBossError {
   static override readonly code = "redis.settings-invalid" as const;
+  declare readonly code: typeof RedisSettingsError.code;
   override name = "RedisSettingsError";
+
+  constructor(options: RedisSettingsErrorOptions) {
+    super(options.message, options);
+  }
 }
 
 /** What a start check's error is made of (agbossjs/agboss#891): the problems it found. */
 export interface RedisProblemsOptions {
   /** Each way the server falls short, with what it loses and what to set. */
   readonly problems: readonly string[];
+  readonly cause?: unknown;
 }
 
 /**
@@ -30,12 +42,15 @@ export interface RedisProblemsOptions {
  */
 export class RedisDeploymentError extends AGBossError {
   static override readonly code = "redis.deployment-unsupported" as const;
+  declare readonly code: typeof RedisDeploymentError.code;
   override name = "RedisDeploymentError";
   /** Each way the server falls short of one primary. */
   readonly problems: readonly string[];
 
   constructor(options: RedisProblemsOptions) {
-    super(`the Redis stores need one durable primary — ${options.problems.join("; ")}`);
+    super(`the Redis stores need one durable primary — ${options.problems.join("; ")}`, {
+      cause: options.cause,
+    });
     this.problems = options.problems;
   }
 }
@@ -58,6 +73,7 @@ export interface RedisLeaseKeyConflictErrorOptions {
  */
 export class RedisLeaseKeyConflictError extends AGBossError {
   static override readonly code = "redis.lease-key-conflict" as const;
+  declare readonly code: typeof RedisLeaseKeyConflictError.code;
   override name = "RedisLeaseKeyConflictError";
   readonly tenantId: string;
   readonly executionId: string;
@@ -83,6 +99,7 @@ export class RedisLeaseKeyConflictError extends AGBossError {
  */
 export class RedisDurabilityError extends AGBossError {
   static override readonly code = "redis.durability-insufficient" as const;
+  declare readonly code: typeof RedisDurabilityError.code;
   override name = "RedisDurabilityError";
   /** Each setting found short, with what it loses and what to set. */
   readonly problems: readonly string[];
@@ -90,6 +107,7 @@ export class RedisDurabilityError extends AGBossError {
   constructor(options: RedisProblemsOptions) {
     super(
       `the Redis server can lose an acknowledged write — ${options.problems.join("; ")}. Set them on the server, or opt out knowingly: redisDurabilityOptOut: "acknowledged-writes-may-be-lost"`,
+      { cause: options.cause },
     );
     this.problems = options.problems;
   }

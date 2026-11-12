@@ -19,6 +19,7 @@ export {
   type RedisLeaseKeyConflictErrorOptions,
   RedisSettingsError,
   type RedisProblemsOptions,
+  type RedisSettingsErrorOptions,
 } from "./errors.js";
 export { RedisExecutionLeaseRepository } from "./stores/redis-execution-lease.repository.js";
 export { RedisChildExecutionQueueRepository } from "./stores/redis-child-execution-queue.repository.js";

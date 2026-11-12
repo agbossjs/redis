@@ -81,6 +81,8 @@ export class RedisDeploymentError extends AGBossError {
     // (undocumented)
     static readonly code: "redis.deployment-unsupported";
     // (undocumented)
+    readonly code: typeof RedisDeploymentError.code;
+    // (undocumented)
     name: string;
     readonly problems: readonly string[];
 }
@@ -96,6 +98,8 @@ export class RedisDurabilityError extends AGBossError {
     constructor(options: RedisProblemsOptions);
     // (undocumented)
     static readonly code: "redis.durability-insufficient";
+    // (undocumented)
+    readonly code: typeof RedisDurabilityError.code;
     // (undocumented)
     name: string;
     readonly problems: readonly string[];
@@ -133,6 +137,8 @@ export class RedisLeaseKeyConflictError extends AGBossError {
     // (undocumented)
     static readonly code: "redis.lease-key-conflict";
     // (undocumented)
+    readonly code: typeof RedisLeaseKeyConflictError.code;
+    // (undocumented)
     readonly executionId: string;
     // (undocumented)
     name: string;
@@ -152,6 +158,8 @@ export interface RedisLeaseKeyConflictErrorOptions {
 
 // @public
 export interface RedisProblemsOptions {
+    // (undocumented)
+    readonly cause?: unknown;
     readonly problems: readonly string[];
 }
 
@@ -178,10 +186,21 @@ export class RedisRateLimitRepository extends RateLimitRepository {
 
 // @public
 export class RedisSettingsError extends AGBossError {
+    constructor(options: RedisSettingsErrorOptions);
     // (undocumented)
     static readonly code: "redis.settings-invalid";
     // (undocumented)
+    readonly code: typeof RedisSettingsError.code;
+    // (undocumented)
     name: string;
+}
+
+// @public
+export interface RedisSettingsErrorOptions {
+    // (undocumented)
+    readonly cause?: unknown;
+    // (undocumented)
+    readonly message: string;
 }
 
 // @public
@@ -193,19 +212,26 @@ export interface RedisTopology {
 
 // Warnings were encountered during analysis:
 //
-// src/errors.ts:16:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:17:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:32:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:33:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:45:3 - (ae-undocumented) Missing documentation for "tenantId".
-// src/errors.ts:46:3 - (ae-undocumented) Missing documentation for "executionId".
-// src/errors.ts:47:3 - (ae-undocumented) Missing documentation for "cause".
-// src/errors.ts:60:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:61:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:62:3 - (ae-undocumented) Missing documentation for "tenantId".
-// src/errors.ts:63:3 - (ae-undocumented) Missing documentation for "executionId".
-// src/errors.ts:85:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:86:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:12:3 - (ae-undocumented) Missing documentation for "message".
+// src/errors.ts:13:3 - (ae-undocumented) Missing documentation for "cause".
+// src/errors.ts:22:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:23:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:24:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:35:3 - (ae-undocumented) Missing documentation for "cause".
+// src/errors.ts:44:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:45:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:46:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:60:3 - (ae-undocumented) Missing documentation for "tenantId".
+// src/errors.ts:61:3 - (ae-undocumented) Missing documentation for "executionId".
+// src/errors.ts:62:3 - (ae-undocumented) Missing documentation for "cause".
+// src/errors.ts:75:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:76:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:77:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:78:3 - (ae-undocumented) Missing documentation for "tenantId".
+// src/errors.ts:79:3 - (ae-undocumented) Missing documentation for "executionId".
+// src/errors.ts:101:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:102:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:103:12 - (ae-undocumented) Missing documentation for "name".
 // src/stores/redis-child-execution-queue.repository.ts:100:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/redis-child-execution-queue.repository.ts:104:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/redis-child-execution-queue.repository.ts:130:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".

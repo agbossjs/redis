@@ -78,7 +78,10 @@ function clientOf(
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new RedisSettingsError(`redisUrl is not a usable Redis URL: ${reason}`, { cause: error });
+    throw new RedisSettingsError({
+      message: `redisUrl is not a usable Redis URL: ${reason}`,
+      cause: error,
+    });
   }
   client.on("ready", () => {
     wasReady = true;
