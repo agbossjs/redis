@@ -11,6 +11,7 @@ import {
 } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
+import { RedisLeaseKeyConflictError } from "../errors.js";
 import { RedisConnection } from "../connection/redis-connection.js";
 import { keyOf, runScript, type RedisScript } from "../connection/scripts.js";
 import { ACQUIRE, CLOSE, RECLAIM, RENEW, YIELD } from "./leases/lease-scripts.js";
@@ -70,8 +71,17 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
   }
 
   /** Kept by the durable store under `EXECUTION_ID_STORE`, never in Redis (#527, #891). */
-  claimExecutionId(identity: ExecutionIdentity): Promise<boolean> {
-    return this.executionIds.claimExecutionId(identity);
+  async claimExecutionId(identity: ExecutionIdentity): Promise<boolean> {
+    const claimed = await this.executionIds.claimExecutionId(identity);
+    // an id handed out as new has no lease yet: a key of it is another database's (#923)
+    if (claimed && (await this.#hasLeaseKey(identity.tenantId, identity.executionId)))
+      throw new RedisLeaseKeyConflictError(identity);
+    return claimed;
+  }
+
+  async #hasLeaseKey(tenantId: string, executionId: string): Promise<boolean> {
+    const key = keyOf(this.connection.keyPrefix, "lease", tenantId, executionId);
+    return (await this.connection.client.exists(key)) > 0;
   }
 
   async acquire(

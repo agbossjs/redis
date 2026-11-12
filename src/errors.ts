@@ -40,6 +40,39 @@ export class RedisDeploymentError extends AGBossError {
   }
 }
 
+/** What `RedisLeaseKeyConflictError` takes: the execution the two stores disagree about. */
+export interface RedisLeaseKeyConflictErrorOptions {
+  readonly tenantId: string;
+  readonly executionId: string;
+  readonly cause?: unknown;
+}
+
+/**
+ * The Redis lease store holds a lease for an execution that the id store just handed out as new
+ * (agbossjs/agboss#923): the two stores belong to different deployments or databases — a database
+ * was emptied or replaced and this Redis was not, or two applications share one database or one
+ * Redis. Its lease key is a retired or live lease of another execution of the same id, which no
+ * take of the new one would ever get (a retired lease is never taken again): the operation fails
+ * here instead of waiting for it. Give each application database its own `redisKeyPrefix`, or
+ * empty the keys of the discarded one. Only the id is named, never the key's content.
+ */
+export class RedisLeaseKeyConflictError extends AGBossError {
+  static override readonly code = "redis.lease-key-conflict" as const;
+  override name = "RedisLeaseKeyConflictError";
+  readonly tenantId: string;
+  readonly executionId: string;
+
+  constructor(options: RedisLeaseKeyConflictErrorOptions) {
+    const { tenantId, executionId, cause } = options;
+    super(
+      `the Redis lease store holds a lease for execution ${executionId} (tenant ${tenantId}) that the id store just handed out as new — the two stores belong to different deployments or databases; give each its own redisKeyPrefix (or empty the Redis keys of the discarded database)`,
+      { cause },
+    );
+    this.tenantId = tenantId;
+    this.executionId = executionId;
+  }
+}
+
 /**
  * The server does not keep an acknowledged write: `appendonly` is not `yes`, `appendfsync` is not
  * `always`, `no-appendfsync-on-rewrite` is not `no`, `maxmemory-policy` is not `noeviction`, or the

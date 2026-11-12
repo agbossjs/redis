@@ -128,6 +128,29 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
 }
 
 // @public
+export class RedisLeaseKeyConflictError extends AGBossError {
+    constructor(options: RedisLeaseKeyConflictErrorOptions);
+    // (undocumented)
+    static readonly code: "redis.lease-key-conflict";
+    // (undocumented)
+    readonly executionId: string;
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    readonly tenantId: string;
+}
+
+// @public
+export interface RedisLeaseKeyConflictErrorOptions {
+    // (undocumented)
+    readonly cause?: unknown;
+    // (undocumented)
+    readonly executionId: string;
+    // (undocumented)
+    readonly tenantId: string;
+}
+
+// @public
 export interface RedisProblemsOptions {
     readonly problems: readonly string[];
 }
@@ -174,8 +197,15 @@ export interface RedisTopology {
 // src/errors.ts:17:12 - (ae-undocumented) Missing documentation for "name".
 // src/errors.ts:32:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:33:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:52:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:53:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:45:3 - (ae-undocumented) Missing documentation for "tenantId".
+// src/errors.ts:46:3 - (ae-undocumented) Missing documentation for "executionId".
+// src/errors.ts:47:3 - (ae-undocumented) Missing documentation for "cause".
+// src/errors.ts:60:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:61:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:62:3 - (ae-undocumented) Missing documentation for "tenantId".
+// src/errors.ts:63:3 - (ae-undocumented) Missing documentation for "executionId".
+// src/errors.ts:85:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:86:12 - (ae-undocumented) Missing documentation for "name".
 // src/stores/redis-child-execution-queue.repository.ts:100:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/redis-child-execution-queue.repository.ts:104:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/redis-child-execution-queue.repository.ts:130:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
@@ -183,13 +213,13 @@ export interface RedisTopology {
 // src/stores/redis-child-execution-queue.repository.ts:152:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
 // src/stores/redis-child-execution-queue.repository.ts:169:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
 // src/stores/redis-child-execution-queue.repository.ts:184:9 - (ae-undocumented) Missing documentation for "countByStatus".
-// src/stores/redis-execution-lease.repository.ts:68:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/redis-execution-lease.repository.ts:77:9 - (ae-undocumented) Missing documentation for "acquire".
-// src/stores/redis-execution-lease.repository.ts:102:9 - (ae-undocumented) Missing documentation for "renew".
-// src/stores/redis-execution-lease.repository.ts:111:9 - (ae-undocumented) Missing documentation for "release".
-// src/stores/redis-execution-lease.repository.ts:115:9 - (ae-undocumented) Missing documentation for "retire".
-// src/stores/redis-execution-lease.repository.ts:119:9 - (ae-undocumented) Missing documentation for "yield".
-// src/stores/redis-execution-lease.repository.ts:127:9 - (ae-undocumented) Missing documentation for "reclaim".
+// src/stores/redis-execution-lease.repository.ts:69:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/redis-execution-lease.repository.ts:87:9 - (ae-undocumented) Missing documentation for "acquire".
+// src/stores/redis-execution-lease.repository.ts:112:9 - (ae-undocumented) Missing documentation for "renew".
+// src/stores/redis-execution-lease.repository.ts:121:9 - (ae-undocumented) Missing documentation for "release".
+// src/stores/redis-execution-lease.repository.ts:125:9 - (ae-undocumented) Missing documentation for "retire".
+// src/stores/redis-execution-lease.repository.ts:129:9 - (ae-undocumented) Missing documentation for "yield".
+// src/stores/redis-execution-lease.repository.ts:137:9 - (ae-undocumented) Missing documentation for "reclaim".
 // src/stores/redis-rate-limit.repository.ts:38:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/redis-rate-limit.repository.ts:42:9 - (ae-undocumented) Missing documentation for "acquire".
 // src/stores/redis-rate-limit.repository.ts:62:9 - (ae-undocumented) Missing documentation for "renew".

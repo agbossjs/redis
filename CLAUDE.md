@@ -39,7 +39,7 @@ against a real Redis (`AGBOSS_REDIS_TEST_URL`) · api-extractor (`api/redis.api.
   no cluster → `RedisDeploymentError`, no opt-out); a refused `CONFIG GET` / `INFO` is a problem,
   never a pass; the scripts (`scripts.ts`: `EVALSHA`, `EVAL` once on `NOSCRIPT`; `keyOf`, one JSON
   array of parts); the reconnect strategy.
-- `src/errors.ts` — every named error, an `AGBossError` with a stable `redis.*` code.
+- `src/errors.ts` — every named error, an `AGBossError` with a stable `redis.*` code. `RedisLeaseKeyConflictError` (#923): the claim of an id the id store hands out as new, whose lease key exists, fails — another database's lease (retired ones are never taken again).
 - `src/stores/` — the lease store (concrete: the execution ids it hands out are kept by the durable
   store the application gives under `EXECUTION_ID_STORE`, agbossjs/agboss#891), the child queue,
   rate limits (`REDIS_COORDINATION_STORES`, `coordination-stores.ts`); every atomic operation one Lua script, stated in
