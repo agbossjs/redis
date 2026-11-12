@@ -206,7 +206,12 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
    * does not answer: the core opens it again at its next sweep.
    */
   override watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch> {
-    return openQueueWatch(this.connection.subscriber(), this.#queuedChannel(), onQueued);
+    return openQueueWatch(
+      this.connection.subscriber(),
+      this.#queuedChannel(),
+      onQueued,
+      this.connection.clock,
+    );
   }
 
   #queuedChannel(): string {
