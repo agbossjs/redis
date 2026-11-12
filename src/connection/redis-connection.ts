@@ -1,11 +1,13 @@
 import {
   ApplicationContext,
+  Clock,
   EnvironmentField,
   Injectable,
   type OnDestroy,
   type OnInit,
 } from "@agboss/core";
 import { createClient } from "@redis/client";
+import { closeBounded } from "./close-bounded.js";
 import { RedisSettingsError } from "../errors.js";
 import {
   durabilityOf,
@@ -103,7 +105,7 @@ function clientOf(
  * the child queue); fenced effects and outbound calls stay on a durable store (agbossjs/agboss#526).
  */
 @Injectable({
-  deps: [ApplicationContext],
+  deps: [ApplicationContext, Clock],
   // checked at the application's assembly (agbossjs/agboss#511): a contract without redisUrl
   // fails with [environment.missing-field] before anything starts
   environmentFields: {
@@ -117,10 +119,21 @@ export class RedisConnection implements OnInit, OnDestroy {
   readonly client: RedisClient;
   /** What every key of the stores starts with (`redisKeyPrefix`, default `agboss:`). */
   readonly keyPrefix: string;
+  /**
+   * The clock that bounds the close at the stop (agbossjs/agboss#923); none: the close is in order only.
+   *
+   * @internal
+   */
+  readonly clock: Clock | undefined;
   readonly #optOut: RedisDurabilityOptOut | undefined;
   readonly #url: string;
 
-  constructor(source: ApplicationContext | RedisConnectionSettings) {
+  /**
+   * @param clock bounds the close at the stop (agbossjs/agboss#923); a connection built without
+   *   one closes in order only.
+   */
+  constructor(source: ApplicationContext | RedisConnectionSettings, clock?: Clock) {
+    this.clock = clock;
     const settings =
       source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
     this.#optOut = settings.durabilityOptOut;
@@ -205,6 +218,6 @@ export class RedisConnection implements OnInit, OnDestroy {
 
   /** Closes the client when the instance stops (its stores are destroyed first: they depend on it). */
   async onDestroy(): Promise<void> {
-    if (this.client.isOpen) await this.client.close();
+    await closeBounded(this.client, this.clock);
   }
 }

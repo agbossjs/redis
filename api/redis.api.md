@@ -56,7 +56,7 @@ export type RedisClient = ReturnType<typeof createClient>;
 
 // @public
 export class RedisConnection implements OnInit, OnDestroy {
-    constructor(source: ApplicationContext | RedisConnectionSettings);
+    constructor(source: ApplicationContext | RedisConnectionSettings, clock?: Clock);
     readonly client: RedisClient;
     durability(): Promise<RedisDurability>;
     readonly keyPrefix: string;

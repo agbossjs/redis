@@ -1,4 +1,5 @@
-import type { ChildExecutionQueueWatch } from "@agboss/core";
+import type { ChildExecutionQueueWatch, Clock } from "@agboss/core";
+import { closeBounded } from "../../connection/close-bounded.js";
 import type { RedisClient } from "../../connection/redis-connection.js";
 
 /**
@@ -13,6 +14,7 @@ export async function openQueueWatch(
   subscriber: RedisClient,
   channel: string,
   onQueued: () => void,
+  clock?: Clock,
 ): Promise<ChildExecutionQueueWatch> {
   let isOpen = true;
   let wasReady = subscriber.isReady;
@@ -35,7 +37,7 @@ export async function openQueueWatch(
     close: async () => {
       if (!isOpen) return;
       isOpen = false;
-      if (subscriber.isOpen) await subscriber.close();
+      await closeBounded(subscriber, clock);
     },
   };
 }
