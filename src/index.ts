@@ -15,6 +15,8 @@ export type { RedisTopology } from "./connection/deployment.js";
 export {
   RedisDeploymentError,
   RedisDurabilityError,
+  RedisLeaseKeyConflictError,
+  type RedisLeaseKeyConflictErrorOptions,
   RedisSettingsError,
   type RedisProblemsOptions,
 } from "./errors.js";

@@ -138,6 +138,15 @@ export class AppEnvironment {
 }
 ```
 
+**One prefix per database.** A lease key is never deleted or expired, and a retired lease is never
+taken again (a finished execution's id is never run again). The execution ids come from the
+durable store under `EXECUTION_ID_STORE`: a database emptied or replaced under a Redis that was not
+— or two applications on one Redis, each with its own database, under one prefix — hands out an id
+whose lease key already exists, and no take of it would ever succeed. The claim of such an id fails
+with `RedisLeaseKeyConflictError` (`redis.lease-key-conflict`, naming the id only): give each
+database its own `redisKeyPrefix`, or empty the keys of the discarded one. (The PostgreSQL, MongoDB
+and SQLite lease stores keep their ids and their leases in one database, so they cannot disagree.)
+
 `RedisConnection` (`deps: [ApplicationContext]`, or `new RedisConnection({ url })` in a script or a
 test) holds one [node-redis](https://github.com/redis/node-redis) client (`@redis/client`) per
 application instance. At `onInit` it connects and runs the start checks. If the server is down, the
