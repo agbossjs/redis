@@ -31,6 +31,20 @@ describe("#989: a test server's host is pinned to the address that answers", () 
     expect(await pinnedUrl(url, 6379)).toBe(`redis://user:se%40cret@127.0.0.1:${String(port)}/2`);
   });
 
+  it("a server on both ::1 and 127.0.0.1 (CI's services) → 127.0.0.1: no bracketed IPv6 host", async () => {
+    const both = createServer((socket) => socket.destroy());
+    await new Promise<void>((resolve) =>
+      both.listen({ port: 0, host: "::", ipv6Only: false }, resolve),
+    );
+    const address = both.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+
+    expect(await pinnedUrl(`redis://localhost:${String(address.port)}/x`, 6379)).toBe(
+      `redis://127.0.0.1:${String(address.port)}/x`,
+    );
+    await new Promise((resolve) => both.close(resolve));
+  });
+
   it("an address already pinned is left as it is", async () => {
     const url = `redis://127.0.0.1:${String(port)}`;
 

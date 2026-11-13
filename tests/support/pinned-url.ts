@@ -15,9 +15,11 @@ export async function pinnedUrl(url: string, defaultPort: number): Promise<strin
   const host = parsed.hostname.replace(/^\[|\]$/gu, "");
   if (isIP(host) !== 0) return url;
   const port = parsed.port === "" ? defaultPort : Number(parsed.port);
-  for (const { address, family } of await lookup(host, { all: true }))
+  // an IPv4 address: a bracketed IPv6 host is not read by every client (node-redis's `url.parse`);
+  // a server on IPv6 alone keeps its name
+  for (const { address } of await lookup(host, { all: true, family: 4 }))
     if (await isListening(address, port)) {
-      parsed.hostname = family === 6 ? `[${address}]` : address;
+      parsed.hostname = address;
       return parsed.toString();
     }
   return url;
