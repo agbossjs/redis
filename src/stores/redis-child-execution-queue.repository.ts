@@ -4,6 +4,7 @@ import {
   Clock,
   ExecutionRecordStatus,
   Injectable,
+  Logger,
   type ChildExecutionEnd,
   type ChildExecutionQueueCounts,
   type ChildExecutionQueueWatch,
@@ -20,7 +21,7 @@ import {
   QUEUED_AT_DIGITS,
   SAVE,
 } from "./queue/queue-scripts.js";
-import { openQueueWatch } from "./queue/queue-watch.js";
+import { LivenessWatch } from "./queue/queue-watch-liveness.js";
 
 /** A time as the row keeps it: ms as text. */
 const Time = z
@@ -87,12 +88,13 @@ const DepthReply = z.tuple([z.number().int(), z.number().int()]).rest(z.string()
  * keep: the queued members by time alone and the running rows. The watch (agbossjs/agboss#777) is a
  * subscription to the channel every save publishes on, one connection of its own per watch.
  */
-@Injectable({ deps: [RedisConnection, Clock, ApplicationContext] })
+@Injectable({ deps: [RedisConnection, Clock, ApplicationContext, Logger] })
 export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepository {
   constructor(
     private readonly connection: RedisConnection,
     private readonly clock: Clock,
     private readonly applicationContext: ApplicationContext,
+    private readonly logger: Logger,
   ) {
     super();
   }
@@ -203,16 +205,20 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
    * connection reconnects (at once, ~5 ms; while the server stays down 2 s, doubling, at most 30 s
    * apart), subscribes again and wakes
    * `onQueued` once when back — a message sent while it was down is lost (pub/sub keeps nothing),
-   * so that wake-up stands for it, and the core's sweep stays the floor. Rejects when the server
-   * does not answer: the core opens it again at its next sweep.
+   * so that wake-up stands for it, and the core's sweep stays the floor. A connection that dies
+   * silently is noticed within `redisWatchLivenessSeconds` (agbossjs/agboss#789): a warning
+   * (`child-queue.watch-connection-lost`), a new subscription and one wake-up. Rejects when the
+   * server does not answer: the core opens it again at its next sweep.
    */
   override watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch> {
-    return openQueueWatch(
-      this.connection.subscriber(),
-      this.#queuedChannel(),
+    return LivenessWatch.open({
+      subscriber: () => this.connection.subscriber(),
+      channel: this.#queuedChannel(),
       onQueued,
-      this.connection.clock,
-    );
+      clock: this.clock,
+      livenessSeconds: this.connection.watchLivenessSeconds,
+      logger: this.logger,
+    });
   }
 
   #queuedChannel(): string {

@@ -19,6 +19,7 @@ import {
 import { requireOnePrimary, topologyOfServer, type RedisTopology } from "./deployment.js";
 import {
   DEFAULT_KEY_PREFIX,
+  DEFAULT_WATCH_LIVENESS_SECONDS,
   settingsOfEnvironment,
   type RedisConnectionSettings,
 } from "./settings.js";
@@ -119,6 +120,7 @@ function clientOf(
     redisUrl: EnvironmentField.secret(),
     redisDurabilityOptOut: EnvironmentField.text({ optional: true }),
     redisKeyPrefix: EnvironmentField.text({ optional: true }),
+    redisWatchLivenessSeconds: EnvironmentField.integer({ optional: true }),
   },
 })
 export class RedisConnection implements OnInit, OnDestroy {
@@ -132,6 +134,13 @@ export class RedisConnection implements OnInit, OnDestroy {
    * @internal
    */
   readonly clock: Clock | undefined;
+  /**
+   * How long the child queue's watch may go without noticing a silently dead connection, in seconds
+   * (`redisWatchLivenessSeconds`, agbossjs/agboss#789).
+   *
+   * @internal
+   */
+  readonly watchLivenessSeconds: number;
   readonly #optOut: RedisDurabilityOptOut | undefined;
   readonly #url: string;
 
@@ -146,6 +155,7 @@ export class RedisConnection implements OnInit, OnDestroy {
     this.#optOut = settings.durabilityOptOut;
     this.keyPrefix = settings.keyPrefix ?? DEFAULT_KEY_PREFIX;
     this.#url = settings.url;
+    this.watchLivenessSeconds = settings.watchLivenessSeconds ?? DEFAULT_WATCH_LIVENESS_SECONDS;
     this.client = clientOf(settings.url);
   }
 

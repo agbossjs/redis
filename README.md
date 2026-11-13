@@ -135,8 +135,20 @@ export class AppEnvironment {
   redisUrl!: Secret; // redis://user:password@host:6379/0 — secret("REDIS_URL")
   redisDurabilityOptOut?: string; // only "acknowledged-writes-may-be-lost"
   redisKeyPrefix?: string; // default "agboss:" — several applications on one server
+  redisWatchLivenessSeconds?: number; // the longest a silently dead subscription goes unnoticed: 10 (default), at least 2
 }
 ```
+
+**A subscription that dies silently** (agbossjs/agboss#789) — a half-open TCP connection behind a
+NAT or a load balancer: no FIN, no RST, the wake-ups of the child queue just stop — is noticed
+within `redisWatchLivenessSeconds` (default 10 s, at least 2): the subscriber runs a `PING` every
+half of it (5 s; `PING` is allowed on a subscribed connection) and the answer is due within the
+other half; node-redis keeps TCP keepalive on its socket as well. A connection that does not answer
+is destroyed, `child-queue.watch-connection-lost` is logged at `warn`, and a new subscriber
+subscribes after the first pause (1 s), waking the claimers once: a child queued during the gap
+waits for neither the sweep nor the next message. The worst case is the bound, plus 1 s, plus a
+connection (a new connection that is swallowed too is dropped at the bound and tried again, 2 s
+later, doubling up to 30 s). A connection that drops loudly reconnects as before.
 
 **One prefix per database.** A lease key is never deleted or expired, and a retired lease is never
 taken again (a finished execution's id is never run again). The execution ids come from the

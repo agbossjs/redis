@@ -16,6 +16,7 @@ import { ExecutionIdentity } from '@agboss/core';
 import { ExecutionIdStore } from '@agboss/core';
 import { ExecutionLease } from '@agboss/core';
 import { ExecutionLeaseRepository } from '@agboss/core';
+import { Logger } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
 import { OnDestroy } from '@agboss/core';
 import { OnInit } from '@agboss/core';
@@ -29,11 +30,14 @@ import { StoreDescriptor } from '@agboss/core';
 export const DEFAULT_KEY_PREFIX = "agboss:";
 
 // @public
+export const DEFAULT_WATCH_LIVENESS_SECONDS = 10;
+
+// @public
 export const REDIS_COORDINATION_STORES: readonly [typeof RedisExecutionLeaseRepository, typeof RedisChildExecutionQueueRepository, typeof RedisRateLimitRepository];
 
 // @public
 export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepository {
-    constructor(connection: RedisConnection, clock: Clock, applicationContext: ApplicationContext);
+    constructor(connection: RedisConnection, clock: Clock, applicationContext: ApplicationContext, logger: Logger);
     // (undocumented)
     claimFirstByStatusQueuedOrderByDepthDesc(): Promise<QueuedChildExecution | undefined>;
     // (undocumented)
@@ -73,6 +77,7 @@ export interface RedisConnectionSettings {
     readonly durabilityOptOut?: RedisDurabilityOptOut;
     readonly keyPrefix?: string;
     readonly url: string;
+    readonly watchLivenessSeconds?: number;
 }
 
 // @public
@@ -232,13 +237,13 @@ export interface RedisTopology {
 // src/errors.ts:101:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:102:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:103:12 - (ae-undocumented) Missing documentation for "name".
-// src/stores/redis-child-execution-queue.repository.ts:100:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/redis-child-execution-queue.repository.ts:104:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
-// src/stores/redis-child-execution-queue.repository.ts:130:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
-// src/stores/redis-child-execution-queue.repository.ts:138:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
-// src/stores/redis-child-execution-queue.repository.ts:152:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
-// src/stores/redis-child-execution-queue.repository.ts:169:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
-// src/stores/redis-child-execution-queue.repository.ts:184:9 - (ae-undocumented) Missing documentation for "countByStatus".
+// src/stores/redis-child-execution-queue.repository.ts:102:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/redis-child-execution-queue.repository.ts:106:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/redis-child-execution-queue.repository.ts:132:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:140:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
+// src/stores/redis-child-execution-queue.repository.ts:154:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:171:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts:186:9 - (ae-undocumented) Missing documentation for "countByStatus".
 // src/stores/redis-execution-lease.repository.ts:69:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/redis-execution-lease.repository.ts:87:9 - (ae-undocumented) Missing documentation for "acquire".
 // src/stores/redis-execution-lease.repository.ts:112:9 - (ae-undocumented) Missing documentation for "renew".
