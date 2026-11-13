@@ -1,5 +1,25 @@
 import { createClient } from "@redis/client";
+import { pinnedUrl } from "./pinned-url.js";
 import { DURABLE_URL, HOW_TO, WEAK_URL } from "./server.js";
+
+/** The server variables the tests read (`server.ts`); each pinned by `pinServerUrls`. */
+const SERVER_VARIABLES = [
+  "AGBOSS_REDIS_TEST_URL",
+  "AGBOSS_REDIS_WEAK_TEST_URL",
+  "AGBOSS_REDIS_REPLICA_TEST_URL",
+] as const;
+
+/**
+ * agbossjs/agboss#989: each server URL set, its host pinned to the address the server answers on,
+ * so no test connection can be made to itself; the test files' workers start after the setup and
+ * read the pinned URLs.
+ */
+async function pinServerUrls(): Promise<void> {
+  for (const name of SERVER_VARIABLES) {
+    const url = process.env[name];
+    if (url !== undefined && url !== "") process.env[name] = await pinnedUrl(url, 6379);
+  }
+}
 
 /**
  * The integration tests run against a real Redis. In CI (`CI` set) both URLs are required: a
@@ -35,7 +55,9 @@ export async function requireServers(
     process.stderr.write(
       `\n[agboss-redis] ${missing.join(" and ")} not set: the integration tests against a real Redis are SKIPPED (they run in CI). To run them, ${HOW_TO}\n\n`,
     );
-  for (const [name, url] of servers) if (url !== "") await requireAnswer(name, url);
+  await pinServerUrls();
+  for (const [name, url] of servers)
+    if (url !== "") await requireAnswer(name, process.env[name] ?? url);
 }
 
 export default async function requireRedis(): Promise<void> {
