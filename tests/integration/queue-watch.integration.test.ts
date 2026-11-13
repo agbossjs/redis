@@ -1,7 +1,7 @@
 /**
  * agbossjs/agboss#777 — the Redis child queue's watch on the real server, beyond the core's
  * contract cases (`QUEUE_WATCH_CASES`, run by `storeConformance`): a child queued by another
- * process wakes it; a dropped subscription reconnects, subscribes again and wakes once when back —
+ * process wakes it; a dropped subscription reconnects, subscribes again and wakes when back —
  * for the message it lost while down —; a closed watch wakes nothing; a server that does not answer
  * rejects the watch (the core opens it again at its next sweep, its floor for any lost wake-up).
  */
@@ -23,6 +23,8 @@ const CHILD = fileURLToPath(new URL("../support/queue-save.child.mjs", import.me
 function wakeUps(): {
   readonly onQueued: () => void;
   next(): Promise<void>;
+  /** Forgets the wake-ups not yet awaited: the next `next()` waits for one from now on. */
+  fresh(): void;
   readonly count: number;
 } {
   let count = 0;
@@ -35,6 +37,9 @@ function wakeUps(): {
     },
     next: async () => {
       await pending;
+      pending = new Promise<void>((resolve) => (woken = resolve));
+    },
+    fresh: () => {
       pending = new Promise<void>((resolve) => (woken = resolve));
     },
     get count() {
@@ -86,7 +91,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#777: the Redis child queue'
     }
   });
 
-  it("a dropped subscription subscribes again and wakes once when back, for what it lost", async () => {
+  it("a dropped subscription subscribes again and wakes for what it lost, then wakes as before", async () => {
     await space.reset();
     const { connection, queue } = await queueOf("instance-2");
     const other = await queueOf("instance-1");
@@ -95,20 +100,31 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#777: the Redis child queue'
     const id = await subscriber.clientId();
     const wake = wakeUps();
     const watch = await openQueueWatch(subscriber, `${space.prefix}child-queued`, wake.onQueued);
+    // a channel of its own: messages of one connection arrive in order, so its message fences them
+    let arrived: () => void = () => undefined;
+    const fenced = new Promise<void>((resolve) => (arrived = resolve));
+    await subscriber.subscribe(`${space.prefix}fence`, () => {
+      arrived();
+    });
     try {
       await other.connection.client.clientKill({ filter: "ID", id });
-      // published while the subscriber is down (it reconnects 1 s later): lost by pub/sub
+      // right after the kill: node-redis reconnects at once (~5 ms), so this save is lost by pub/sub
+      // or delivered after the new subscription — the wake-up on `ready` stands for it either way
       expect(await other.queue.saveIfAbsent(child("lost-1"))).toBe(true);
       await wake.next();
-      expect(wake.count).toBe(1);
       expect(await queue.claimFirstByStatusQueuedOrderByDepthDesc()).toMatchObject({
         executionId: "lost-1",
       });
+      await other.connection.client.publish(`${space.prefix}fence`, "back");
+      await fenced;
+      const before = wake.count;
+      expect(before).toBeGreaterThanOrEqual(1);
 
       // subscribed again: the next save wakes it as before
+      wake.fresh();
       await other.queue.saveIfAbsent(child("c-2"));
       await wake.next();
-      expect(wake.count).toBe(2);
+      expect(wake.count).toBe(before + 1);
     } finally {
       await watch.close();
     }
