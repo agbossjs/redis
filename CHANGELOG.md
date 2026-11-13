@@ -8,7 +8,7 @@ tested against the `@agboss/core@X.Y.Z` on npm. Before 1.0 a minor release may b
 exact public surface is `api/redis.api.md`. Issue numbers are agbossjs/agboss's, pull requests
 this repository's.
 
-## [Unreleased] — 0.1.1 (draft: the first release)
+## [0.1.1] — unreleased
 
 The first published version. Redis holds the **coordination stores only** — the execution leases,
 the child queue and the rate limits — beside a durable store (`@agboss/postgres` or
