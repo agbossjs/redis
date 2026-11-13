@@ -44,12 +44,19 @@ export function reconnectStrategyOf(
     !wasReady() && retries >= START_CONNECT_RETRIES ? cause : reconnectDelayOf(retries + 1);
 }
 
-/** The subscriber's first wait before a reconnect (agbossjs/agboss#777): 1 s, doubled each time. */
+/**
+ * The subscriber's wait unit before a reconnect (agbossjs/agboss#777), doubled each time. node-redis
+ * ignores the wait for a dropped connection's first attempt (it reconnects at once, ~5 ms), so the
+ * first wait that counts is the second one, 2 s.
+ */
 export const SUBSCRIBER_RECONNECT_FIRST_MS = 1000;
 /** The subscriber's longest wait before a reconnect: 30 s, the core's sweep. */
 export const SUBSCRIBER_RECONNECT_MAX_MS = 30_000;
 
-/** The subscriber's wait before reconnect attempt `retries` (from 0): 1 s, 2 s, 4 s, … at most 30 s. */
+/**
+ * The subscriber's wait before reconnect attempt `retries` (from 0): 1 s, 2 s, 4 s, … at most 30 s —
+ * the strategy's answer for attempt 0 is not waited (node-redis reconnects at once), the rest are.
+ */
 export const subscriberReconnectDelayOf = (retries: number): number =>
   Math.min(SUBSCRIBER_RECONNECT_FIRST_MS * 2 ** Math.min(retries, 5), SUBSCRIBER_RECONNECT_MAX_MS);
 
@@ -145,7 +152,8 @@ export class RedisConnection implements OnInit, OnDestroy {
   /**
    * A new client on the same server for pub/sub (`SUBSCRIBE` takes a connection over), not
    * connected: its owner connects and closes it. Its first connect rejects at once when the server
-   * does not answer; once ready, a dropped connection reconnects 1 s, 2 s, … at most 30 s apart and
+   * does not answer; once ready, a dropped connection reconnects at once (node-redis skips the first
+   * wait, ~5 ms), then, while the server stays down, 2 s, 4 s, … at most 30 s apart, and
    * subscribes again before it is ready (agbossjs/agboss#777). The child queue's watch only — not
    * part of the package's API (agbossjs/agboss#891).
    *

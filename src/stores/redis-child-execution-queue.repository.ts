@@ -200,7 +200,8 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
    * Wakes `onQueued` whenever any instance queues a child — new, or queued again — on this key
    * prefix (agbossjs/agboss#777): a subscription on a connection of its own to the channel the save
    * script publishes on. Idle on an empty queue: the server pushes, nothing is polled. A dropped
-   * connection reconnects (1 s, doubling, at most 30 s apart), subscribes again and wakes
+   * connection reconnects (at once, ~5 ms; while the server stays down 2 s, doubling, at most 30 s
+   * apart), subscribes again and wakes
    * `onQueued` once when back — a message sent while it was down is lost (pub/sub keeps nothing),
    * so that wake-up stands for it, and the core's sweep stays the floor. Rejects when the server
    * does not answer: the core opens it again at its next sweep.

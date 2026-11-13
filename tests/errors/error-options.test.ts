@@ -1,9 +1,9 @@
 /**
  * #906 AC1 (completing #890, G8): every error `@agboss/redis` exports is made from one options
  * object whose keys are its own properties, with a `cause` that is kept — the core's convention. The
- * test walks the entry's exports: a new error class without a fixture here fails it.
+ * test walks the entry's exports and takes every `Error` subclass, `AGBossError` or not (#961, as
+ * core and postgres do): a new error class without a fixture here fails it.
  */
-import { AGBossError } from "@agboss/core";
 import { describe, expect, it } from "vitest";
 import * as entry from "../../src/index.js";
 
@@ -14,18 +14,19 @@ const FIXTURES: Readonly<Record<string, object>> = {
   RedisSettingsError: { message: "redisUrl is empty" },
 };
 
-type ErrorClass = abstract new (options: never) => AGBossError;
+type ErrorClass = abstract new (options: never) => Error;
+
+const isErrorClass = (value: unknown): value is ErrorClass =>
+  typeof value === "function" && value.prototype instanceof Error;
 
 const classes = Object.entries(entry).flatMap(([name, value]): [string, ErrorClass][] =>
-  typeof value === "function" && value.prototype instanceof AGBossError
-    ? [[name, value as ErrorClass]]
-    : [],
+  isErrorClass(value) ? [[name, value]] : [],
 );
 
 /** `new ErrorClass(options)`, however its options are typed. */
-const made = (ErrorClass: ErrorClass, options: object): AGBossError => {
+const made = (ErrorClass: ErrorClass, options: object): Error => {
   const error: unknown = Reflect.construct(ErrorClass, [options]);
-  if (!(error instanceof AGBossError)) throw new TypeError("not an AGBossError");
+  if (!(error instanceof Error)) throw new TypeError("not an Error");
   return error;
 };
 
@@ -44,8 +45,8 @@ describe("#906 AC1: every error takes one options bag with a cause", () => {
 
       expect(error.cause).toBe(cause);
       expect(Object.keys(options).filter((key) => !Object.hasOwn(error, key))).toEqual([]);
-      expect(error.code).toBe(Reflect.get(ErrorClass, "code"));
-      expect(made(ErrorClass, options)).toBeInstanceOf(AGBossError);
+      expect(Reflect.get(error, "code")).toBe(Reflect.get(ErrorClass, "code"));
+      expect(made(ErrorClass, options)).toBeInstanceOf(Error);
     },
   );
 });
