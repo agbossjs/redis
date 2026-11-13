@@ -13,10 +13,21 @@ export interface RedisConnectionSettings {
    * tests' files, share one server without seeing each other's keys.
    */
   readonly keyPrefix?: string;
+  /**
+   * The longest a silently dead connection of the child queue's watch (a half-open TCP connection:
+   * no FIN, no RST) goes unnoticed, in seconds (agbossjs/agboss#789; default
+   * `DEFAULT_WATCH_LIVENESS_SECONDS`, 10, at least 2): the watch pings its connection every half of
+   * it and gives the answer the other half, then warns, subscribes on a new connection and wakes
+   * once.
+   */
+  readonly watchLivenessSeconds?: number;
 }
 
 /** The prefix of every key when the settings name none. */
 export const DEFAULT_KEY_PREFIX = "agboss:";
+
+/** The watch's liveness bound when the settings name none (agbossjs/agboss#789). */
+export const DEFAULT_WATCH_LIVENESS_SECONDS = 10;
 
 /** A `Secret` of the environment: only `reveal()` gives its value. */
 interface RevealedSecret {
@@ -43,6 +54,11 @@ const RedisEnvironment = z.object({
     .string()
     .min(1, { message: "redisKeyPrefix is empty: leave it unset for the default agboss:" })
     .optional(),
+  redisWatchLivenessSeconds: z
+    .number({ message: "redisWatchLivenessSeconds must be a number" })
+    .int("redisWatchLivenessSeconds must be a whole number")
+    .min(2, "redisWatchLivenessSeconds must be at least 2")
+    .optional(),
 });
 
 const MISSING_URL =
@@ -50,7 +66,7 @@ const MISSING_URL =
 
 /**
  * The connection settings an application's environment gives: `redisUrl` (required, a `Secret`),
- * `redisDurabilityOptOut` and `redisKeyPrefix` (optional). A missing or mistyped field fails with
+ * `redisDurabilityOptOut`, `redisKeyPrefix` and `redisWatchLivenessSeconds` (optional). A missing or mistyped field fails with
  * `RedisSettingsError`, naming it — the URL itself is never printed.
  */
 export function settingsOfEnvironment(environment: unknown): RedisConnectionSettings {
@@ -65,11 +81,15 @@ export function settingsOfEnvironment(environment: unknown): RedisConnectionSett
     });
   }
   const { redisUrl, redisDurabilityOptOut, redisKeyPrefix } = parsed.data;
+  const { redisWatchLivenessSeconds } = parsed.data;
   const url = redisUrl.reveal();
   if (url.length === 0) throw new RedisSettingsError({ message: "redisUrl is empty" });
   return {
     url,
     durabilityOptOut: redisDurabilityOptOut,
     ...(redisKeyPrefix === undefined ? {} : { keyPrefix: redisKeyPrefix }),
+    ...(redisWatchLivenessSeconds === undefined
+      ? {}
+      : { watchLivenessSeconds: redisWatchLivenessSeconds }),
   };
 }

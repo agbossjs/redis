@@ -9,9 +9,11 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { ExecutionRecordStatus, type QueuedChildExecution } from "@agboss/core";
+import { VirtualClock } from "@agboss/core/testing";
 import { afterAll, describe, expect, it } from "vitest";
 import { RedisChildExecutionQueueRepository, RedisConnection } from "../../src/index.js";
 import { openQueueWatch } from "../../src/stores/queue/queue-watch.js";
+import { RecordingLogger } from "../support/recording-logger.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { connectionOf, testKeySpace } from "../support/redis-store.js";
 import { DURABLE_URL } from "../support/server.js";
@@ -54,7 +56,8 @@ const child = (executionId: string): QueuedChildExecution => ({
   ...{ status: ExecutionRecordStatus.Queued, queuedAt: new Date(0) },
 });
 
-const clock = { now: () => new Date(0), sleep: () => Promise.resolve(), monotonicNow: () => 0 };
+/** The virtual clock the watch's liveness ping and its pauses sleep on: only a test's `advance` wakes them. */
+const clock = new VirtualClock();
 
 describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#777: the Redis child queue's watch", () => {
   const space = testKeySpace("queue-watch");
@@ -69,7 +72,12 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#777: the Redis child queue'
     const context = new TestApplicationContext({}, instanceId);
     return {
       connection,
-      queue: new RedisChildExecutionQueueRepository(connection, clock, context),
+      queue: new RedisChildExecutionQueueRepository(
+        connection,
+        clock,
+        context,
+        new RecordingLogger(),
+      ),
     };
   };
 
@@ -152,6 +160,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#777: the Redis child queue'
       connection,
       clock,
       new TestApplicationContext({}),
+      new RecordingLogger(),
     );
     await expect(queue.watchQueued(() => undefined)).rejects.toThrow();
   });

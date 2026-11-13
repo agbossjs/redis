@@ -6,6 +6,7 @@
  * source, the rate-limit keys expire by themselves, the queue's depth forgets a running child whose
  * tree ended (agbossjs/agboss#485), and the start checks pass on one durable primary.
  */
+import { RecordingLogger } from "../support/recording-logger.js";
 import {
   ExecutionRecordStatus,
   StoreClock,
@@ -138,6 +139,7 @@ describe.skipIf(DURABLE_URL === "")(
         connection,
         clock,
         new TestApplicationContext({}),
+        new RecordingLogger(),
       );
       const child = (executionId: string, rootExecutionId: string): QueuedChildExecution => ({
         ...{

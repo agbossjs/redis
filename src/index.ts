@@ -9,7 +9,11 @@
  * with `...REDIS_COORDINATION_STORES`.
  */
 export { RedisConnection, type RedisClient } from "./connection/redis-connection.js";
-export { DEFAULT_KEY_PREFIX, type RedisConnectionSettings } from "./connection/settings.js";
+export {
+  DEFAULT_KEY_PREFIX,
+  DEFAULT_WATCH_LIVENESS_SECONDS,
+  type RedisConnectionSettings,
+} from "./connection/settings.js";
 export { RedisDurabilityOptOut, type RedisDurability } from "./connection/durability.js";
 export type { RedisTopology } from "./connection/deployment.js";
 export {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_KEY_PREFIX, RedisDurabilityOptOut, RedisSettingsError } from "../../src/index.js";
+import {
+  DEFAULT_KEY_PREFIX,
+  DEFAULT_WATCH_LIVENESS_SECONDS,
+  RedisDurabilityOptOut,
+  RedisSettingsError,
+} from "../../src/index.js";
 import { settingsOfEnvironment } from "../../src/connection/settings.js";
 import { revealing } from "../support/application-context.js";
 
@@ -77,6 +82,28 @@ describe("the environment fields of the Redis stores", () => {
     expect(settingsOfEnvironment({ redisUrl: revealing(URL) }).keyPrefix).toBeUndefined();
     expect(DEFAULT_KEY_PREFIX).toBe("agboss:");
   });
+
+  it("agbossjs/agboss#789: redisWatchLivenessSeconds is read when set; unset, the watch uses 10 s", () => {
+    expect(
+      settingsOfEnvironment({ redisUrl: revealing(URL), redisWatchLivenessSeconds: 6 })
+        .watchLivenessSeconds,
+    ).toBe(6);
+    expect(
+      settingsOfEnvironment({ redisUrl: revealing(URL) }).watchLivenessSeconds,
+    ).toBeUndefined();
+    expect(DEFAULT_WATCH_LIVENESS_SECONDS).toBe(10);
+  });
+
+  it.each([
+    [{ redisWatchLivenessSeconds: 1 }, /redisWatchLivenessSeconds must be at least 2/],
+    [{ redisWatchLivenessSeconds: 2.5 }, /redisWatchLivenessSeconds must be a whole number/],
+    [{ redisWatchLivenessSeconds: "5" }, /redisWatchLivenessSeconds must be a number/],
+  ])(
+    "agbossjs/agboss#789: a mistyped redisWatchLivenessSeconds fails, naming it: %o",
+    (fields, message) => {
+      expect(() => settingsOfEnvironment({ redisUrl: revealing(URL), ...fields })).toThrow(message);
+    },
+  );
 
   it("an empty redisKeyPrefix fails: every application would share the bare key space", () => {
     expect(() => settingsOfEnvironment({ redisUrl: revealing(URL), redisKeyPrefix: "" })).toThrow(

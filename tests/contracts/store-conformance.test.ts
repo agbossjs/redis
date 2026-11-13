@@ -1,3 +1,4 @@
+import { RecordingLogger } from "../support/recording-logger.js";
 import { storeConformance, StoreCapability } from "@agboss/core/testing/contracts";
 import { minutes } from "@agboss/core/units";
 import { afterAll } from "vitest";
@@ -31,7 +32,12 @@ storeConformance({
       ...redisStore(
         space,
         (connection, seam) =>
-          new RedisChildExecutionQueueRepository(connection, seam.clock, seam.application),
+          new RedisChildExecutionQueueRepository(
+            connection,
+            seam.clock,
+            seam.application,
+            new RecordingLogger(),
+          ),
       ),
       capabilities: [StoreCapability.WatchQueued],
     },
