@@ -149,6 +149,8 @@ subscribes after the first pause (1 s), waking the claimers once: a child queued
 waits for neither the sweep nor the next message. The worst case is the bound, plus 1 s, plus a
 connection (a new connection that is swallowed too is dropped at the bound and tried again, 2 s
 later, doubling up to 30 s). A connection that drops loudly reconnects as before.
+The bound of a settings object (`watchLivenessSeconds`) is checked as the environment's is: a whole
+number of at least 2, else `RedisSettingsError` at construction (agbossjs/agboss#1029).
 
 **One prefix per database.** A lease key is never deleted or expired, and a retired lease is never
 taken again (a finished execution's id is never run again). The execution ids come from the

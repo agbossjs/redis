@@ -18,6 +18,7 @@ import {
 } from "./durability.js";
 import { requireOnePrimary, topologyOfServer, type RedisTopology } from "./deployment.js";
 import {
+  checkedWatchLivenessOf,
   DEFAULT_KEY_PREFIX,
   DEFAULT_WATCH_LIVENESS_SECONDS,
   settingsOfEnvironment,
@@ -155,7 +156,8 @@ export class RedisConnection implements OnInit, OnDestroy {
     this.#optOut = settings.durabilityOptOut;
     this.keyPrefix = settings.keyPrefix ?? DEFAULT_KEY_PREFIX;
     this.#url = settings.url;
-    this.watchLivenessSeconds = settings.watchLivenessSeconds ?? DEFAULT_WATCH_LIVENESS_SECONDS;
+    this.watchLivenessSeconds =
+      checkedWatchLivenessOf(settings.watchLivenessSeconds) ?? DEFAULT_WATCH_LIVENESS_SECONDS;
     this.client = clientOf(settings.url);
   }
 
