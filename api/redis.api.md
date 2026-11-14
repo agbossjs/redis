@@ -129,6 +129,7 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
     release(held: ExecutionLease): Promise<void>;
     // (undocumented)
     renew(held: ExecutionLease, duration: Milliseconds): Promise<Milliseconds | undefined>;
+    requestCancel(): Promise<void>;
     // (undocumented)
     retire(held: ExecutionLease): Promise<void>;
     static readonly store: StoreDescriptor;

@@ -70,6 +70,17 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
     return this.connection.ping();
   }
 
+  /**
+   * Writes nothing (agbossjs/agboss#909): the cancel's mark is what the fenced-effect and
+   * outbound-call stores of a backend read in the transaction that checks the lease, and none of them
+   * may sit beside Redis leases (A2: a fenced write of another backend over them is refused at
+   * assembly) — an application on these leases has no fenced write to refuse. Its holder reads a
+   * cancel request at its next renewal, as before; the lease is not touched.
+   */
+  requestCancel(): Promise<void> {
+    return Promise.resolve();
+  }
+
   /** Kept by the durable store under `EXECUTION_ID_STORE`, never in Redis (#527, #891). */
   async claimExecutionId(identity: ExecutionIdentity): Promise<boolean> {
     const claimed = await this.executionIds.claimExecutionId(identity);
