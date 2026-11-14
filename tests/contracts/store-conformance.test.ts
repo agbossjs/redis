@@ -1,9 +1,10 @@
 import { RecordingLogger } from "../support/recording-logger.js";
 import { storeConformance, StoreCapability } from "@agboss/core/testing/contracts";
 import { minutes } from "@agboss/core/units";
-import { afterAll } from "vitest";
+import { afterAll, describe } from "vitest";
 import { RedisChildExecutionQueueRepository, RedisRateLimitRepository } from "../../src/index.js";
 import { leasesOf, redisStore, testKeySpace } from "../support/redis-store.js";
+import { DURABLE_URL } from "../support/server.js";
 
 /**
  * agbossjs/agboss#693 AC1 — every Redis store through the core's `storeConformance` (#526): the
@@ -14,36 +15,43 @@ import { leasesOf, redisStore, testKeySpace } from "../support/redis-store.js";
  * their guarantee needs the lease in the write's own transaction (#526, ADR-0026), and the audit log
  * is a record, kept with the application's durable rows (#527).
  */
-const space = testKeySpace("conformance");
+/**
+ * agbossjs/agboss#1047: the suites need the durable Redis; without `AGBOSS_REDIS_TEST_URL` they are
+ * skipped locally (the global setup prints the notice) and fail in CI (the setup refuses the run).
+ */
+describe.skipIf(DURABLE_URL === "")("the Redis stores through storeConformance", () => {
+  const space = testKeySpace("conformance");
 
-afterAll(async () => {
-  await space.close();
-});
+  afterAll(async () => {
+    await space.close();
+  });
 
-storeConformance({
-  name: "Redis",
-  interleavings: { depth: 8, walks: 200, timeLimit: minutes(15) },
-  reset: () => space.reset(),
-  without: ["executionAuditLog", "fencedEffect", "outboundCall"],
-  stores: {
-    executionLease: redisStore(space, (connection, seam) => leasesOf(space, connection, seam)),
-    // agbossjs/agboss#831: the queue has a watch (LISTEN / a change stream / pub/sub): declared
-    childExecutionQueue: {
-      ...redisStore(
+  storeConformance({
+    name: "Redis",
+    interleavings: { depth: 8, walks: 200, timeLimit: minutes(15) },
+    reset: () => space.reset(),
+    without: ["executionAuditLog", "fencedEffect", "outboundCall"],
+    stores: {
+      executionLease: redisStore(space, (connection, seam) => leasesOf(space, connection, seam)),
+      // agbossjs/agboss#831: the queue has a watch (LISTEN / a change stream / pub/sub): declared
+      childExecutionQueue: {
+        ...redisStore(
+          space,
+          (connection, seam) =>
+            new RedisChildExecutionQueueRepository(
+              connection,
+              seam.clock,
+              seam.application,
+              new RecordingLogger(),
+            ),
+        ),
+        capabilities: [StoreCapability.WatchQueued],
+      },
+      rateLimit: redisStore(
         space,
         (connection, seam) =>
-          new RedisChildExecutionQueueRepository(
-            connection,
-            seam.clock,
-            seam.application,
-            new RecordingLogger(),
-          ),
+          new RedisRateLimitRepository(connection, seam.clock, seam.application),
       ),
-      capabilities: [StoreCapability.WatchQueued],
     },
-    rateLimit: redisStore(
-      space,
-      (connection, seam) => new RedisRateLimitRepository(connection, seam.clock, seam.application),
-    ),
-  },
+  });
 });

@@ -1,6 +1,6 @@
 import { createClient } from "@redis/client";
 import { pinnedUrl } from "./pinned-url.js";
-import { DURABLE_URL, HOW_TO, WEAK_URL } from "./server.js";
+import { DURABLE_URL, HOW_TO, REPLICA_URL, WEAK_URL } from "./server.js";
 
 /** The server variables the tests read (`server.ts`); each pinned by `pinServerUrls`. */
 const SERVER_VARIABLES = [
@@ -22,7 +22,7 @@ async function pinServerUrls(): Promise<void> {
 }
 
 /**
- * The integration tests run against a real Redis. In CI (`CI` set) both URLs are required: a
+ * The integration tests run against a real Redis. In CI (`CI` set) all three URLs are required: a
  * missing one fails the run here, before any test — CI never skips them. Locally, without the
  * URLs, they are skipped and this says so; a URL that is set but does not answer fails the run.
  */
@@ -64,5 +64,6 @@ export default async function requireRedis(): Promise<void> {
   await requireServers([
     ["AGBOSS_REDIS_TEST_URL", DURABLE_URL],
     ["AGBOSS_REDIS_WEAK_TEST_URL", WEAK_URL],
+    ["AGBOSS_REDIS_REPLICA_TEST_URL", REPLICA_URL],
   ]);
 }

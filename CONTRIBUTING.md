@@ -7,11 +7,14 @@ every change starts as an issue there (stage = its `status:*` label: Triage → 
 ## Before a PR
 
 1. `npm ci && npm run pack:framework && npm run install:packed` — the core at the pinned SHA.
-2. `npm run check` — the gate CI runs too. The integration tests need a durable Redis, a Redis with
-   the defaults and a replica; without `AGBOSS_REDIS_TEST_URL`, `AGBOSS_REDIS_WEAK_TEST_URL` and
-   `AGBOSS_REDIS_REPLICA_TEST_URL` they are skipped locally (the run says so) — CI runs them on
-   `redis:7`. `npm run test:faults` and `npm run test:crash` (it kills the server named by
-   `AGBOSS_REDIS_CRASH_CONTAINER`) run in CI too.
+2. `npm run check` — the gate CI runs too. The integration tests and the store contracts need a
+   durable Redis, a Redis with the defaults and a replica (`AGBOSS_REDIS_TEST_URL`,
+   `AGBOSS_REDIS_WEAK_TEST_URL`, `AGBOSS_REDIS_REPLICA_TEST_URL`; the skip notice says how to start
+   them). Without them `npm test` skips those tests locally (the run says so) and everything else
+   runs; `npm run check` stops at its coverage step with a message naming the missing URLs, as
+   that step holds every test to run (agbossjs/agboss#1047). In CI (`CI` set) a missing URL fails
+   the run before any test: CI never skips them. `npm run test:faults` and `npm run test:crash` (it
+   kills the server named by `AGBOSS_REDIS_CRASH_CONTAINER`) run in CI too.
 
 ## Branches, commits, PRs
 

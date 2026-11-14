@@ -48,7 +48,7 @@
     "format:check": "prettier --check .",
     "pretest": "npm run build",
     "test": "vitest run",
-    "precoverage": "npm run build",
+    "precoverage": "node scripts/check-coverage-servers.mjs && npm run build",
     "coverage": "node scripts/check-test-run.mjs --expect test-run.json -- vitest run --coverage",
     "check:api": "npm run build && node scripts/api-report.mjs",
     "api:update": "npm run build && node scripts/api-report.mjs --write",
