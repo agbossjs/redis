@@ -13,7 +13,10 @@ export const HOW_TO = `start a durable Redis and export its URL, e.g.
   export AGBOSS_REDIS_TEST_URL=redis://localhost:6379
 and for the refusal, a Redis with the defaults (no append-only file):
   docker run -d --name agboss-redis-weak -p 6380:6379 redis:7
-  export AGBOSS_REDIS_WEAK_TEST_URL=redis://localhost:6380`;
+  export AGBOSS_REDIS_WEAK_TEST_URL=redis://localhost:6380
+and for the replica refusal, a replica of the durable one:
+  docker run -d --name agboss-redis-replica -p 6381:6379 redis:7 redis-server --replicaof host.docker.internal 6379
+  export AGBOSS_REDIS_REPLICA_TEST_URL=redis://localhost:6381`;
 
 /** A replica of the durable server (CI: `redis:7 --replicaof …`): the start check must refuse it. */
 export const REPLICA_URL = process.env.AGBOSS_REDIS_REPLICA_TEST_URL ?? "";
