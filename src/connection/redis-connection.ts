@@ -7,8 +7,8 @@ import {
   type OnInit,
 } from "@agboss/core";
 import { createClient } from "@redis/client";
-import { closeBounded } from "./close-bounded.js";
-import { RedisSettingsError } from "../errors.js";
+import { closeBounded, destroyed } from "./close-bounded.js";
+import { RedisConnectionClosedError, RedisSettingsError } from "../errors.js";
 import {
   durabilityOf,
   durabilityProblemsOfServer,
@@ -144,6 +144,10 @@ export class RedisConnection implements OnInit, OnDestroy {
   readonly watchLivenessSeconds: number;
   readonly #optOut: RedisDurabilityOptOut | undefined;
   readonly #url: string;
+  /** The subscribers handed out and not ended yet: a stop that gave their owner up destroys them. */
+  readonly #subscribers = new Set<RedisClient>();
+  /** Aborted when `onDestroy` starts: no subscriber is handed out any more (#954). */
+  readonly #closed = new AbortController();
 
   /**
    * @param clock bounds the close at the stop (agbossjs/agboss#923); a connection built without
@@ -167,12 +171,18 @@ export class RedisConnection implements OnInit, OnDestroy {
    * does not answer; once ready, a dropped connection reconnects at once (node-redis skips the first
    * wait, ~5 ms), then, while the server stays down, 2 s, 4 s, … at most 30 s apart, and
    * subscribes again before it is ready (agbossjs/agboss#777). The child queue's watch only — not
-   * part of the package's API (agbossjs/agboss#891).
+   * part of the package's API (agbossjs/agboss#891). Throws `RedisConnectionClosedError` once
+   * `onDestroy` has started (agbossjs/agboss#954).
    *
    * @internal
    */
   subscriber(): RedisClient {
-    return clientOf(this.#url, subscriberReconnectStrategyOf);
+    if (this.#closed.signal.aborted) throw new RedisConnectionClosedError();
+    const client = clientOf(this.#url, subscriberReconnectStrategyOf);
+    // the watch's owner closes it; one the stop gave up on is destroyed with the connection (#954)
+    this.#subscribers.add(client);
+    client.once("end", () => this.#subscribers.delete(client));
+    return client;
   }
 
   /**
@@ -236,8 +246,15 @@ export class RedisConnection implements OnInit, OnDestroy {
     }
   }
 
-  /** Closes the client when the instance stops (its stores are destroyed first: they depend on it). */
+  /**
+   * Closes the client when the instance stops (its stores are destroyed first: they depend on it);
+   * a subscriber still up — its watch's owner was given up on by the stop — is destroyed, none
+   * is left with an open socket (agbossjs/agboss#954).
+   */
   async onDestroy(): Promise<void> {
+    this.#closed.abort();
+    for (const subscriber of [...this.#subscribers]) destroyed(subscriber);
+    this.#subscribers.clear();
     await closeBounded(this.client, this.clock);
   }
 }

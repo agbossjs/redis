@@ -1,7 +1,9 @@
 import { LogLevel, type ChildExecutionQueueWatch, type Clock, type Logger } from "@agboss/core";
 import { seconds } from "@agboss/core/units";
+import { destroyed } from "../../connection/close-bounded.js";
 import { watchLiveness } from "../../connection/heartbeat.js";
 import type { RedisClient } from "../../connection/redis-connection.js";
+import { RedisConnectionClosedError } from "../../errors.js";
 import { openQueueWatch } from "./queue-watch.js";
 
 /** The pauses before each attempt to subscribe again; the last one repeats. */
@@ -76,7 +78,7 @@ export class LivenessWatch implements ChildExecutionQueueWatch {
       this.#current = current;
       void this.#heartbeat(current);
     } catch (error) {
-      if (client.isOpen) client.destroy();
+      destroyed(client);
       throw error;
     } finally {
       attempt.abort();
@@ -112,7 +114,7 @@ export class LivenessWatch implements ChildExecutionQueueWatch {
       time: this.options.clock.now(),
     });
     // a silent connection never answers an orderly close: its socket is dropped
-    if (current.client.isOpen) current.client.destroy();
+    destroyed(current.client);
     this.#resubscribing = this.#resubscribe().finally(() => {
       this.#resubscribing = undefined;
     });
@@ -136,7 +138,9 @@ export class LivenessWatch implements ChildExecutionQueueWatch {
     try {
       await this.#subscribe();
       return true;
-    } catch {
+    } catch (error) {
+      // the connection is stopped (the stop gave this watch up): nothing to subscribe on, ever
+      if (error instanceof RedisConnectionClosedError) this.#stopped.abort();
       return false;
     }
   }

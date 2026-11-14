@@ -40,8 +40,12 @@ export async function closeBounded(client: Closable, clock: Clock | undefined): 
   }
 }
 
-/** A client that is closing is not `isOpen` any more, but its socket is still up: destroy it. */
-function destroyed(client: Closable): void {
+/**
+ * Destroys `client`'s socket whatever state it is in (agbossjs/agboss#954). A client that is
+ * closing, or still connecting, is not `isOpen`, but its socket is up (or coming up): never
+ * guarded by `isOpen`. A client already closed has nothing left to destroy.
+ */
+export function destroyed(client: Pick<Closable, "destroy">): void {
   try {
     client.destroy();
   } catch {
