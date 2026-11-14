@@ -19,6 +19,8 @@ export interface RedisConnectionSettings {
    * `DEFAULT_WATCH_LIVENESS_SECONDS`, 10, at least 2): the watch pings its connection every half of
    * it and gives the answer the other half, then warns, subscribes on a new connection and wakes
    * once.
+   * Another value (0, 1, a negative or a fractional number) is a `RedisSettingsError` at construction
+   * (agbossjs/agboss#1029), as in the environment.
    */
   readonly watchLivenessSeconds?: number;
 }
@@ -28,6 +30,19 @@ export const DEFAULT_KEY_PREFIX = "agboss:";
 
 /** The watch's liveness bound when the settings name none (agbossjs/agboss#789). */
 export const DEFAULT_WATCH_LIVENESS_SECONDS = 10;
+
+/**
+ * `seconds` when the child queue's watch can run on it — a whole number of at least 2, as the
+ * environment's field is checked —, else `RedisSettingsError` naming `watchLivenessSeconds`
+ * (agbossjs/agboss#1029): a settings object a script or a provider builds is trusted no more than
+ * the environment.
+ */
+export function checkedWatchLivenessOf(seconds: number | undefined): number | undefined {
+  if (seconds === undefined || (Number.isInteger(seconds) && seconds >= 2)) return seconds;
+  throw new RedisSettingsError({
+    message: `watchLivenessSeconds must be a whole number of at least 2, got ${String(seconds)}`,
+  });
+}
 
 /** A `Secret` of the environment: only `reveal()` gives its value. */
 interface RevealedSecret {
