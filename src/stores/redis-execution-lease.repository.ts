@@ -71,8 +71,10 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
   }
 
   /**
-   * Writes nothing (agbossjs/agboss#909): the cancel's mark is what the fenced-effect and
-   * outbound-call stores of a backend read in the transaction that checks the lease, and none of them
+   * Writes nothing (agbossjs/agboss#909, #1117): the cancel's mark is permanent and lives on the tree's
+   * lease row in a fencing backend, where the fenced-effect and outbound-call stores read it in the
+   * transaction that checks the lease. Redis keeps no such row to mark — no seed key for a tree never
+   * acquired, no field on a lease key — and none of those stores
    * may sit beside Redis leases (A2: a fenced write of another backend over them is refused at
    * assembly) — an application on these leases has no fenced write to refuse. Its holder reads a
    * cancel request at its next renewal, as before; the lease is not touched.
