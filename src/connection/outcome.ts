@@ -60,7 +60,7 @@ const QUEUE_FULL = "The queue is full";
  * that reply is unknown (`SCRIPT_MARKER`). Not listed on purpose: `OOM` (checked per command of the
  * script, after an earlier one wrote), `WRONGTYPE` and `ERR` (raised by a command mid-script).
  */
-const REFUSED_BEFORE_RUN: ReadonlySet<string> = new Set([
+const REFUSED_BEFORE_RUN: ReadonlySet<string | undefined> = new Set([
   "NOSCRIPT",
   "BUSY",
   "LOADING",
@@ -84,19 +84,19 @@ const SCRIPT_MARKER = "@user_script";
 const CONNECT_CODES: ReadonlySet<string> = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
 const CONNECT_SYSCALLS: ReadonlySet<string> = new Set(["connect", "getaddrinfo"]);
 
-const stringOf = (error: Error, property: string): string | undefined => {
-  const value: unknown = Reflect.get(error, property);
-  return typeof value === "string" ? value : undefined;
-};
+/** The refusal words, and `undefined` for a reply with no first word (never one of them). */
+const isRefusalWord = (word: string | undefined): boolean => REFUSED_BEFORE_RUN.has(word);
 
 const isRefusedBeforeRun = (error: unknown): boolean =>
   error instanceof ErrorReply &&
   !error.message.includes(SCRIPT_MARKER) &&
-  REFUSED_BEFORE_RUN.has(error.message.split(" ", 1)[0] ?? "");
+  isRefusalWord(error.message.split(" ", 1)[0]);
+
+/** A property of a driver error as text (`"undefined"` when it has none: in no set below). */
+const textOf = (error: Error, property: string): string => String(Reflect.get(error, property));
 
 const isConnectError = (error: Error): boolean =>
-  CONNECT_CODES.has(stringOf(error, "code") ?? "") &&
-  CONNECT_SYSCALLS.has(stringOf(error, "syscall") ?? "");
+  CONNECT_CODES.has(textOf(error, "code")) && CONNECT_SYSCALLS.has(textOf(error, "syscall"));
 
 /** Whether `error` proves the command was never sent or never ran (the whitelist). */
 export function isKnown(error: unknown): boolean {
