@@ -59,8 +59,12 @@ const QUEUE_FULL = "The queue is full";
  * `redis.call` refused) ends in ` script: <sha>, on @user_script:<line>.` and may follow a write:
  * that reply is unknown (`SCRIPT_MARKER`). Not listed on purpose: `OOM` (checked per command of the
  * script, after an earlier one wrote), `WRONGTYPE` and `ERR` (raised by a command mid-script).
+ *
+ * This reading rests on the invariant stated at `RedisScript` (`scripts.ts`): no script of the stores
+ * returns an error reply of its own that starts with one of these words (guard test
+ * `tests/connection/script-replies.test.ts`).
  */
-const REFUSED_BEFORE_RUN: ReadonlySet<string | undefined> = new Set([
+export const REFUSED_BEFORE_RUN: ReadonlySet<string | undefined> = new Set([
   "NOSCRIPT",
   "BUSY",
   "LOADING",
