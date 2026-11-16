@@ -64,6 +64,10 @@ jobs:
           npm run pack:framework
           npm run install:packed
 
+      # a test's child process (tests/support/queue-save.child.mjs) imports the built package
+      - name: Build
+        run: npm run build
+
       - name: Wait for Redis
         run: |
           for server in redis-durable redis-weak redis-replica; do
