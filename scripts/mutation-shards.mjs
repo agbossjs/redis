@@ -8,22 +8,25 @@
 export const SHARDS = {
   // the lease: its claim, renewal, finish, yield and reclaim as one script each, the server's
   // `TIME` as its clock, the cancel mark (agbossjs/agboss#1117, #1152), the scripts' `EVALSHA`
-  // with `EVAL` once on `NOSCRIPT`
+  // with `EVAL` once on `NOSCRIPT`, and the whitelist that reads a write's error after the send as
+  // of unknown outcome (agbossjs/agboss#1017)
   leases: {
     mutate: [
       "src/stores/redis-execution-lease.repository.ts",
       "src/stores/leases/lease-scripts.ts",
       "src/stores/store-time.ts",
       "src/connection/scripts.ts",
+      "src/connection/outcome.ts",
     ],
     tests: [
       "tests/contracts/store-conformance.test.ts",
-      "tests/connection/scripts.test.ts",
-      "tests/integration/{stores,stored-layout,lease-key-conflict,cancel-mark-durable}.integration.test.ts",
+      "tests/connection/{scripts,outcome}.test.ts",
+      "tests/integration/{stores,stored-layout,lease-key-conflict,cancel-mark-durable,outcome}.integration.test.ts",
     ],
   },
   // the child queue (its saves, claims and the watch that wakes a waiter: agbossjs/agboss#777,
-  // #789, #1029) and the rate limits' windows
+  // #789, #1029) and the rate limits' windows; their direct writes and the depth script's read
+  // against the outcome whitelist (#1017)
   "queue-and-limits": {
     mutate: [
       "src/stores/redis-child-execution-queue.repository.ts",
@@ -36,7 +39,7 @@ export const SHARDS = {
       "tests/contracts/store-conformance.test.ts",
       "tests/connection/watch-liveness-settings.test.ts",
       "tests/stores/*.test.ts",
-      "tests/integration/{stores,stored-layout,queue-watch,queue-watch-silent-death}.integration.test.ts",
+      "tests/integration/{stores,stored-layout,queue-watch,queue-watch-silent-death,outcome}.integration.test.ts",
     ],
     // the lease cases of the store contracts and their interleavings touch none of these modules
     // and take most of the run's time: left to the leases shard

@@ -1,3 +1,5 @@
+import { StoreOutcomeUnknownError } from "@agboss/core/stores";
+import { SimpleError } from "@redis/client";
 import { describe, expect, it } from "vitest";
 import { keyOf, RedisScript, runScript, type ScriptClient } from "../../src/connection/scripts.js";
 
@@ -46,12 +48,25 @@ describe("runScript", () => {
     expect(calls).toEqual(["evalSha", "eval"]);
   });
 
-  it("any other error is the call's, and nothing runs again", async () => {
+  it("a refusal before the script ran is the call's own error, and nothing runs again", async () => {
+    const refusal = new SimpleError("BUSY Redis is busy running a script");
     const { client, calls } = fakeClient(
-      async () => Promise.reject(new Error("BUSY Redis is busy running a script")),
+      async () => Promise.reject(refusal),
       async () => 2,
     );
-    await expect(runScript(client, script, [], [])).rejects.toThrow(/^BUSY/u);
+    await expect(runScript(client, script, [], [])).rejects.toBe(refusal);
+    expect(calls).toEqual(["evalSha"]);
+  });
+
+  it("any other error is of unknown outcome (agbossjs/agboss#1017), and nothing runs again", async () => {
+    const lost = new Error("read ECONNRESET");
+    const { client, calls } = fakeClient(
+      async () => Promise.reject(lost),
+      async () => 2,
+    );
+    await expect(runScript(client, script, [], [])).rejects.toBeInstanceOf(
+      StoreOutcomeUnknownError,
+    );
     expect(calls).toEqual(["evalSha"]);
   });
 });
