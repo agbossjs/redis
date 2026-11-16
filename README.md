@@ -59,8 +59,15 @@ names each one. They are **coordination only**: pair them with the durable store
 MongoDB that leave the coordination and fencing stores out (`POSTGRES_DURABLE_STORES`,
 `MONGODB_DURABLE_STORES`), and list no fenced-effect or outbound-call store.
 
-Every execution id is kept forever by the lease store (`claimExecutionId`, #591). Redis keeps none:
-`RedisExecutionLeaseRepository` injects `EXECUTION_ID_STORE`, and the application gives it its
+Every execution id is kept forever by the lease store (`claimExecutionId`, #591), and so is every
+tree's **cancel mark** (`requestCancel` / `isCancelRequested`, agbossjs/agboss#909, #1117, #1152): the
+mark is permanent and lives on the tree's lease row of the durable store (PostgreSQL, MongoDB), where
+its fencing stores read it. Redis keeps neither: `RedisExecutionLeaseRepository` hands both to the
+store under `EXECUTION_ID_STORE` and writes nothing of them to Redis, so a Redis that is flushed,
+restarted from an old snapshot or failed over loses no cancel (a test empties a Redis and reads the
+mark back). The store under that token must be a durable lease store, not a stand-in that keeps ids
+only: the constructor refuses one that lacks `requestCancel` or `isCancelRequested`. The application
+gives it its
 durable lease store by class — created by the container under that token only, so it is neither a
 second lease store (`[di.ambiguous-implementation]`) nor made with `new`:
 
