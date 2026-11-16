@@ -233,12 +233,15 @@ jobs:
             done
           done
 
+      # keyed by the mutation setup too: a change of the Stryker config or of a shard's modules or
+      # tests restores nothing, so that run is cold — an incremental run trusts results for tests
+      # it sees by name only and has kept stale ones (agbossjs/agboss#1213)
       - name: Restore the shard's last mutation run
         uses: actions/cache@v4
         with:
           path: reports/stryker-incremental-${{ matrix.shard }}.json
-          key: stryker-${{ matrix.shard }}-${{ github.sha }}
-          restore-keys: stryker-${{ matrix.shard }}-
+          key: stryker-${{ matrix.shard }}-${{ hashFiles('stryker.config.mjs', 'scripts/mutation-shards.mjs', 'vitest.mutation.config.ts') }}-${{ github.sha }}
+          restore-keys: stryker-${{ matrix.shard }}-${{ hashFiles('stryker.config.mjs', 'scripts/mutation-shards.mjs', 'vitest.mutation.config.ts') }}-
 
       - name: Mutation testing of the shard (break below 100 % killed or justified)
         run: npm run test:mutation
