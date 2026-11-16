@@ -24,7 +24,7 @@
     "ai-agents"
   ],
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.16.0"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
