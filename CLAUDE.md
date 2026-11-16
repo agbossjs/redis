@@ -17,12 +17,21 @@ against a real Redis (`AGBOSS_REDIS_TEST_URL`) · api-extractor (`api/redis.api.
 
 - `npm run pack:framework && npm run install:packed` — `@agboss/core` and `@agboss/cli` at the SHA
   pinned in `.agboss-version.json` (pin the current agboss `main` when a store needs a newer core).
-- `npm run check` — format, suppressions (budget 0), reviewed installs (`check:installs`: a
-  workflow installs with `npm ci`, a script resolves ranges only with `--before`, three days back —
-  agbossjs/agboss#523), no real-time threshold in a test (`check:real-time`), flow types
-  (`check:types`: the CLI's `agboss check` on `tests/fixtures/layout.application.ts`, writes the
-  uncommitted `.agboss/types.d.ts`), lint, types, tests with coverage held against `test-run.json`
-  (`scripts/check-test-run.mjs`, agbossjs/agboss#630), API report.
+- `npm run check` (`make check`) — `npm run check:static`, then the tests with coverage held
+  against `test-run.json` (`scripts/check-test-run.mjs`, agbossjs/agboss#630).
+- `npm run check:static` (`make static`; run it before queueing for a gate) — the root allowlist
+  (`check:root`, `.root-allowlist`), format, suppressions (budget 0), reviewed installs
+  (`check:installs`: a workflow installs with `npm ci`, a script resolves ranges only with
+  `--before`, three days back — agbossjs/agboss#523), no real-time threshold in a test
+  (`check:real-time`), flow types (`check:types`: the CLI's `agboss check` on
+  `tests/fixtures/layout.application.ts`, writes the uncommitted `.agboss/types.d.ts`), lint, types,
+  unused files and dependencies (`check:knip`, `knip.jsonc`), API report, docs (`check:docs`: the
+  docs' ts blocks compile against the build, every `npm run …` / `scripts/…` they name exists).
+- `MUTATION_SHARD=<shard> npm run test:mutation` (`make mutation SHARD=<shard>`) — Stryker on one
+  shard of `scripts/mutation-shards.mjs` (`leases`, `queue-and-limits`, `connection`), with the
+  servers of `npm run coverage`; below 100 % killed or justified it fails (agbossjs/agboss#1213).
+  CI runs each shard incrementally, `mutation-nightly.yml` cold; run every shard a change touches
+  locally before a push.
 - `npm run test:faults` — the core's fault suite with the Redis queue and rate limits beside the
   core's SQLite fencing set (`AGBOSS_FAULT_SHARD=k/n` for a shard); `npm run test:crash` — kills the
   test server (`AGBOSS_REDIS_CRASH_CONTAINER`) with SIGKILL and starts it again: alone, never beside
@@ -62,8 +71,12 @@ against a real Redis (`AGBOSS_REDIS_TEST_URL`) · api-extractor (`api/redis.api.
   one beside the Redis leases (#527, #693: their guarantee needs the lease in the business write's
   own transaction). The kept execution ids are never kept in Redis.
 - The core's limits: 200 lines per file, 50 per function, complexity 10; no `eslint-disable`,
-  `@ts-ignore`, `as any`, `as unknown as`. Components keep no state (`agboss/no-component-state`),
-  time from the `Clock` (`agboss/no-direct-time`).
+  `@ts-ignore`, `as any`, `as unknown as`; no synchronous child process in a test
+  (`tests/support/process.ts`). A surviving mutant gets the test that kills it, or the function
+  that hides it is split; a `Stryker disable` names its mutators and why each mutant is equivalent.
+  Components keep no state (`agboss/no-component-state`), time from the `Clock`
+  (`agboss/no-direct-time`); `@agboss/core/internal` is never imported, and `src/` never imports
+  the core's testing entries (lint).
 - Vitest runs at most two workers (`vitest.config.ts`); the fault suite and the crash test one file
   at a time.
 - Integration tests need a real Redis: in CI (`CI` set) a missing URL fails the run; locally they

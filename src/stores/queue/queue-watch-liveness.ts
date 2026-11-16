@@ -1,18 +1,17 @@
 import { LogLevel, type ChildExecutionQueueWatch, type Clock, type Logger } from "@agboss/core";
-import { seconds } from "@agboss/core/units";
+import { seconds, type Milliseconds } from "@agboss/core/units";
 import { destroyed } from "../../connection/close-bounded.js";
 import { watchLiveness } from "../../connection/heartbeat.js";
-import type { RedisClient } from "../../connection/redis-connection.js";
 import { RedisConnectionClosedError } from "../../errors.js";
-import { openQueueWatch } from "./queue-watch.js";
+import { openQueueWatch, type SubscriberClient } from "./queue-watch.js";
 
-/** The pauses before each attempt to subscribe again; the last one repeats. */
-const PAUSES = [1, 2, 4, 8, 16, 30].map((pause) => seconds(pause));
+/** The pause before attempt `attempt` (from 0) to subscribe again: 1 s, doubling, at most 30 s. */
+const pauseBefore = (attempt: number): Milliseconds => seconds(Math.min(2 ** attempt, 30));
 
 /** What a watch that notices a silently dead connection is made of. */
 export interface LivenessWatchOptions {
   /** A new subscriber client, not connected (`RedisConnection.subscriber`). */
-  readonly subscriber: () => RedisClient;
+  readonly subscriber: () => SubscriberClient;
   readonly channel: string;
   readonly onQueued: () => void;
   readonly clock: Clock;
@@ -24,7 +23,7 @@ export interface LivenessWatchOptions {
 
 /** One subscriber, its watch and the end of its ping. */
 interface Subscribed {
-  readonly client: RedisClient;
+  readonly client: SubscriberClient;
   readonly watch: ChildExecutionQueueWatch;
   readonly beat: AbortController;
 }
@@ -52,12 +51,16 @@ export class LivenessWatch implements ChildExecutionQueueWatch {
     return watch;
   }
 
+  /**
+   * Stops: a subscription in progress gives up at once (its client destroyed), then the current
+   * one's ping ends and its client closes. What the subscription in progress left is read after it
+   * settled, so a subscriber that answered as the close began is closed too.
+   */
   async close(): Promise<void> {
     this.#stopped.abort();
-    const current = this.#current;
-    this.#current = undefined;
-    current?.beat.abort();
     await this.#resubscribing;
+    const current = this.#current;
+    current?.beat.abort();
     await current?.watch.close();
   }
 
@@ -71,10 +74,6 @@ export class LivenessWatch implements ChildExecutionQueueWatch {
         this.#unanswered(AbortSignal.any([attempt.signal, this.#stopped.signal])),
       ]);
       const current = { client, watch, beat: new AbortController() };
-      if (this.#stopped.signal.aborted) {
-        await watch.close();
-        return;
-      }
       this.#current = current;
       void this.#heartbeat(current);
     } catch (error) {
@@ -85,13 +84,13 @@ export class LivenessWatch implements ChildExecutionQueueWatch {
     }
   }
 
-  /** Rejects when the liveness bound has passed on the clock (the server is silent) or `signal` aborts. */
+  /** Rejects once the liveness bound has passed on the clock (the server is silent) or `signal` aborts. */
   async #unanswered(signal: AbortSignal): Promise<never> {
     await this.options.clock.sleep(seconds(this.options.livenessSeconds), signal);
     throw new Error("the server did not answer in time");
   }
 
-  /** Pings until the subscriber is replaced; one that does not answer is lost. */
+  /** Pings until the watch closes; a connection that does not answer is lost. */
   async #heartbeat(current: Subscribed): Promise<void> {
     const dead = await watchLiveness({
       clock: this.options.clock,
@@ -99,14 +98,13 @@ export class LivenessWatch implements ChildExecutionQueueWatch {
       ping: () => current.client.ping(),
       signal: current.beat.signal,
     });
+    // a beat ends with no reason only when the close aborted it
     if (dead !== undefined) this.#lost(current, dead);
   }
 
-  /** The connection went silent: subscribe on another, unless the watch is closed or it was replaced. */
+  /** The connection went silent: warn, drop its socket and subscribe on another. */
   #lost(current: Subscribed, reason: string): void {
-    if (this.#stopped.signal.aborted || this.#current !== current) return;
     this.#current = undefined;
-    current.beat.abort();
     this.options.logger.write({
       level: LogLevel.Warn,
       code: "child-queue.watch-connection-lost",
@@ -115,20 +113,18 @@ export class LivenessWatch implements ChildExecutionQueueWatch {
     });
     // a silent connection never answers an orderly close: its socket is dropped
     destroyed(current.client);
-    this.#resubscribing = this.#resubscribe().finally(() => {
-      this.#resubscribing = undefined;
-    });
+    this.#resubscribing = this.#resubscribe();
   }
 
+  /** Subscribes again after each pause until it is subscribed — then wakes once — or stopped. */
   async #resubscribe(): Promise<void> {
     const signal = this.#stopped.signal;
-    const isStopped = (): boolean => signal.aborted;
     for (let attempt = 0; ; attempt += 1) {
-      const pause = PAUSES[Math.min(attempt, PAUSES.length - 1)] ?? seconds(30);
-      await this.options.clock.sleep(pause, signal).catch(() => undefined);
-      if (isStopped()) return;
+      await this.options.clock.sleep(pauseBefore(attempt), signal);
+      if (signal.aborted) return;
       if (await this.#subscribed()) {
-        if (this.#current !== undefined) this.options.onQueued();
+        // a child queued while the connection was silent sent a message nobody heard
+        this.options.onQueued();
         return;
       }
     }

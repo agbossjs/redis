@@ -139,17 +139,16 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
       storeNowArgumentOf(this.clock),
     ]);
     if (reply === null) return undefined;
-    const [token, expires, remaining, previousHolder, previousEpoch] = Taken.parse(reply);
+    const parsed = Taken.parse(reply);
+    const [token, expires, remaining] = parsed;
     const taken = {
       ...{ tenantId, rootExecutionId, holderInstanceId, token },
       ...{ expiresAt: new Date(expires), remaining: remainingOf(remaining) },
     };
-    return previousHolder === undefined || previousEpoch === undefined
+    // five values: a lease that expired without a release, taken over from its holder
+    return parsed.length === 3
       ? taken
-      : {
-          ...taken,
-          takenOverFrom: { holderInstanceId: previousHolder, token: previousEpoch },
-        };
+      : { ...taken, takenOverFrom: { holderInstanceId: parsed[3], token: parsed[4] } };
   }
 
   async renew(held: ExecutionLease, duration: Milliseconds): Promise<Milliseconds | undefined> {

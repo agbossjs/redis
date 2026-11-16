@@ -12,7 +12,7 @@ import { RedisScript } from "../../connection/scripts.js";
 
 /**
  * A save: KEYS row, queue, the tree's set, the queued by time, the running; ARGV the row id, the queue member, −depth, the claim a
- * requeue names (`claimedAt` ms, empty: none), the wake-up channel, then the fields as name/value
+ * requeue names (`claimedAt` ms; empty, which no stored claim equals: none), the wake-up channel, then the fields as name/value
  * pairs. Saved when the child is new, paused (resumed), or running under exactly that claim (its
  * worker lost its lease); 1 when saved. A save publishes on the channel (agbossjs/agboss#777):
  * inside the script, so the message goes out once the row is written, and only then.
@@ -21,7 +21,7 @@ export const SAVE = new RedisScript(`
 local status = redis.call('HGET', KEYS[1], 'status')
 if status then
   local claim = redis.call('HGET', KEYS[1], 'claimedAt')
-  local requeued = status == 'paused' or (status == 'running' and ARGV[4] ~= '' and claim == ARGV[4])
+  local requeued = status == 'paused' or (status == 'running' and claim == ARGV[4])
   if not requeued then return 0 end
   local member = redis.call('HGET', KEYS[1], 'member')
   if member then

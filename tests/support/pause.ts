@@ -1,7 +1,7 @@
-import { execFileSync } from "node:child_process";
 import { createServer, Socket } from "node:net";
 import { Clock } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
+import { outputOf } from "./process.js";
 
 /**
  * A server of the stop tests' own (agbossjs/agboss#923): a container started for the test file,
@@ -9,17 +9,13 @@ import type { Milliseconds } from "@agboss/core/units";
  * sockets stay open — a hung network, a frozen server) and removed after. Without Docker the
  * tests are skipped. Nothing else shares it, so pausing it disturbs no other test.
  */
-const docker = (...args: string[]): string =>
-  execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+const docker = async (...args: string[]): Promise<string> =>
+  (await outputOf("docker", args)).trim();
 
-export const HAS_DOCKER = ((): boolean => {
-  try {
-    docker("info");
-    return true;
-  } catch {
-    return false;
-  }
-})();
+export const HAS_DOCKER = await docker("info").then(
+  () => true,
+  () => false,
+);
 
 /** A free TCP port of the host. */
 export function freePort(): Promise<number> {
@@ -39,10 +35,10 @@ export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Runs `probe` until it passes (a server booting), up to `tries` seconds. */
-export async function untilReady(probe: () => void, tries = 60): Promise<void> {
+export async function untilReady(probe: () => Promise<void>, tries = 60): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      probe();
+      await probe();
       return;
     } catch (error) {
       if (attempt >= tries) throw error;
@@ -54,30 +50,24 @@ export async function untilReady(probe: () => void, tries = 60): Promise<void> {
 /** The container a test file pauses. */
 export interface PausableServer {
   readonly url: string;
-  pause(): void;
-  unpause(): void;
-  remove(): void;
+  pause(): Promise<void>;
+  unpause(): Promise<void>;
+  remove(): Promise<void>;
 }
 
 export function serverOf(name: string, url: string): PausableServer {
   return {
     url,
-    pause: () => {
-      docker("pause", name);
+    pause: async () => {
+      await docker("pause", name);
     },
-    unpause: () => {
-      try {
-        docker("unpause", name);
-      } catch {
-        // not paused
-      }
+    unpause: async () => {
+      // not paused: nothing to undo
+      await docker("unpause", name).catch(() => undefined);
     },
-    remove: () => {
-      try {
-        docker("rm", "-f", name);
-      } catch {
-        // already gone
-      }
+    remove: async () => {
+      // already gone: nothing to remove
+      await docker("rm", "-f", name).catch(() => undefined);
     },
   };
 }
@@ -86,7 +76,7 @@ export function serverOf(name: string, url: string): PausableServer {
 export async function startRedis(): Promise<PausableServer> {
   const name = `agboss-923-redis-${String(process.pid)}`;
   const port = await freePort();
-  docker(
+  await docker(
     ...[
       "run",
       "-d",
@@ -100,8 +90,8 @@ export async function startRedis(): Promise<PausableServer> {
     ...["-p", `127.0.0.1:${String(port)}:6379`, "redis:7"],
     ...["redis-server", "--appendonly", "yes", "--appendfsync", "always"],
   );
-  await untilReady(() => {
-    if (docker("exec", name, "redis-cli", "ping") !== "PONG") throw new Error("not ready");
+  await untilReady(async () => {
+    if ((await docker("exec", name, "redis-cli", "ping")) !== "PONG") throw new Error("not ready");
   });
   return serverOf(name, `redis://127.0.0.1:${String(port)}`);
 }

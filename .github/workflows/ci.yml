@@ -167,3 +167,84 @@ jobs:
 
       - name: The fault suite
         run: npm run test:faults
+
+  # agbossjs/agboss#1213 (the core's #533 item 3, #626): mutation testing of the money-path modules,
+  # one job per shard of scripts/mutation-shards.mjs (MUTATION_SHARD), each incremental (its last
+  # run's results cached): every mutant killed or justified where it stands, else red.
+  # mutation-nightly.yml runs every shard cold.
+  mutation:
+    name: mutation ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [leases, queue-and-limits, connection]
+    env:
+      MUTATION_SHARD: ${{ matrix.shard }}
+      AGBOSS_REDIS_TEST_URL: redis://localhost:6379
+      AGBOSS_REDIS_WEAK_TEST_URL: redis://localhost:6380
+      AGBOSS_REDIS_REPLICA_TEST_URL: redis://localhost:6381
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Redis 7 (durable on 6379, defaults on 6380, a replica on 6381)
+        run: |
+          docker network create redis-net
+          docker run -d --name redis-durable --network redis-net -p 6379:6379 redis:7 \
+            redis-server --appendonly yes --appendfsync always --no-appendfsync-on-rewrite no \
+            --maxmemory-policy noeviction
+          docker run -d --name redis-weak -p 6380:6379 redis:7
+          docker run -d --name redis-replica --network redis-net -p 6381:6379 redis:7 \
+            redis-server --replicaof redis-durable 6379 --appendonly yes --appendfsync always
+
+      - name: Resolve the pinned framework SHA
+        id: pin
+        run: echo "sha=$(node -p "require('./.agboss-version.json').frameworkSha")" >> "$GITHUB_OUTPUT"
+
+      - name: Check out agbossjs/agboss at the pinned SHA
+        uses: actions/checkout@v4
+        with:
+          repository: agbossjs/agboss
+          ref: ${{ steps.pin.outputs.sha }}
+          path: .agboss-source
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Pack @agboss/core at the pinned SHA and install the tarball
+        env:
+          AGBOSS_REPO_DIR: .agboss-source
+        run: |
+          npm run pack:framework
+          npm run install:packed
+
+      - name: Wait for Redis
+        run: |
+          for server in redis-durable redis-weak redis-replica; do
+            for attempt in $(seq 1 60); do
+              [ "$(docker exec "$server" redis-cli ping)" = "PONG" ] && break
+              sleep 1
+            done
+          done
+
+      - name: Restore the shard's last mutation run
+        uses: actions/cache@v4
+        with:
+          path: reports/stryker-incremental-${{ matrix.shard }}.json
+          key: stryker-${{ matrix.shard }}-${{ github.sha }}
+          restore-keys: stryker-${{ matrix.shard }}-
+
+      - name: Mutation testing of the shard (break below 100 % killed or justified)
+        run: npm run test:mutation
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-${{ matrix.shard }}
+          path: reports/mutation/

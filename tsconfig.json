@@ -6,6 +6,7 @@
     "vitest.config.ts",
     "vitest.faults.config.ts",
     "vitest.crash.config.ts",
+    "vitest.mutation.config.ts",
     "eslint.config.js"
   ],
   "exclude": ["tests/fixtures", "tests/layout"]

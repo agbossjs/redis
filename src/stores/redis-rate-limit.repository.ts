@@ -108,10 +108,9 @@ export class RedisRateLimitRepository extends RateLimitRepository {
   }
 
   async pausedUntil(key: string): Promise<Date | undefined> {
-    const stored = await this.connection.client.get(this.#key("pause", key));
-    if (stored === null) return undefined;
-    const until = new Date(Number(stored));
-    return until.getTime() > this.clock.now().getTime() ? until : undefined;
+    // no pause key reads as 0 ms: an instant long past
+    const until = Number((await this.connection.client.get(this.#key("pause", key))) ?? 0);
+    return until > this.clock.now().getTime() ? new Date(until) : undefined;
   }
 
   #key(kind: string, key: string): string {

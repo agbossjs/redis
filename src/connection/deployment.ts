@@ -15,12 +15,12 @@ import { RedisDeploymentError } from "../errors.js";
 /** `INFO <section>`: the server's reply text. */
 export type InfoOf = (section: string) => Promise<string>;
 
-/** The `field:value` lines of an `INFO` reply. */
+/** The `field:value` lines of an `INFO` reply (a `# Section` heading has no colon: no field). */
 export function infoFieldsOf(reply: string): Readonly<Record<string, string>> {
   const fields: Record<string, string> = {};
   for (const line of reply.split(/\r?\n/u)) {
     const at = line.indexOf(":");
-    if (at > 0 && !line.startsWith("#")) fields[line.slice(0, at)] = line.slice(at + 1).trim();
+    if (at > 0) fields[line.slice(0, at)] = line.slice(at + 1);
   }
   return fields;
 }

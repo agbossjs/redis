@@ -71,7 +71,7 @@ gives it its
 durable lease store by class — created by the container under that token only, so it is neither a
 second lease store (`[di.ambiguous-implementation]`) nor made with `new`:
 
-```ts
+```ts no-check: @agboss/mongodb is no dependency of this package
 import { EXECUTION_ID_STORE, provide } from "@agboss/core";
 import { MONGODB_DURABLE_STORES, MongoConnection, MongoExecutionLeaseRepository } from "@agboss/mongodb";
 import { REDIS_COORDINATION_STORES, RedisConnection } from "@agboss/redis";

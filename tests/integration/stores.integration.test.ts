@@ -4,7 +4,8 @@
  * `now()` is decades off changes nothing), a lease key never expires and its epoch never starts
  * over, a script dropped from the server's cache (`SCRIPT FLUSH`, a restart) runs again from its
  * source, the rate-limit keys expire by themselves, the queue's depth forgets a running child whose
- * tree ended (agbossjs/agboss#485), and the start checks pass on one durable primary.
+ * tree ended (agbossjs/agboss#485), the start checks pass on one durable primary, a lease's stored
+ * state is the documented one and its `ping()` is the server's (agbossjs/agboss#1213).
  */
 import { RecordingLogger } from "../support/recording-logger.js";
 import {
@@ -83,14 +84,33 @@ describe.skipIf(DURABLE_URL === "")(
       const first = await leases.acquire("default", "epochs-1", LEASE);
       if (first === undefined) throw new Error("a free tree is taken");
       await leases.release(first);
+      // the stored state is the documented one (lease-scripts.ts): `r` released, `f` retired
+      const released = await connection.client.hGet(key, "s");
       const second = await leases.acquire("default", "epochs-1", LEASE);
       if (second === undefined) throw new Error("a released tree is taken again");
       await leases.retire(second);
+
+      expect(released).toBe("r");
+      expect(await connection.client.hGet(key, "s")).toBe("f");
 
       expect(await connection.client.pTTL(key)).toBe(-1);
       expect(second.token).toBe(2);
       expect(await leases.acquire("default", "epochs-1", LEASE)).toBeUndefined();
       expect(await connection.client.hGet(key, "e")).toBe("2");
+    });
+
+    it("ping() is the server's answer: on a closed connection it rejects", async () => {
+      const connection = await connectionOf(space);
+      const leases = new RedisExecutionLeaseRepository(
+        connection,
+        decadesOffStoreClock(),
+        new TestApplicationContext({}, "instance-ping"),
+        space.keptIds,
+      );
+      await leases.ping();
+      await connection.onDestroy();
+
+      await expect(leases.ping()).rejects.toThrow();
     });
 
     it("a script dropped from the server's cache runs again from its source, once", async () => {
