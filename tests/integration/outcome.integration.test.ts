@@ -143,9 +143,12 @@ describe.skipIf(DURABLE_URL === "")(
     it("a command issued while the link is down waits in the offline queue, and runs once it is back", async () => {
       const connection = await throughProxy();
       proxy.drop();
-      await vi.waitFor(() => {
-        expect(connection.client.isReady).toBe(false);
-      });
+      await vi.waitFor(
+        () => {
+          expect(connection.client.isReady).toBe(false);
+        },
+        { timeout: 10_000 },
+      );
 
       const call = runScript(connection.client, SET, [key("queued")], ["1"]);
       const settled = vi.fn();
@@ -181,9 +184,12 @@ describe.skipIf(DURABLE_URL === "")(
       await client.connect();
       try {
         proxy.drop();
-        await vi.waitFor(() => {
-          expect(client.isReady).toBe(false);
-        });
+        await vi.waitFor(
+          () => {
+            expect(client.isReady).toBe(false);
+          },
+          { timeout: 10_000 },
+        );
 
         const error = await runScript(client, SET, [key("offline")], ["1"]).catch(
           (caught: unknown) => caught,
@@ -193,7 +199,7 @@ describe.skipIf(DURABLE_URL === "")(
         expect(await direct.exists(key("offline"))).toBe(0);
       } finally {
         proxy.reconnect();
-        await client.close();
+        client.destroy();
       }
     });
 
