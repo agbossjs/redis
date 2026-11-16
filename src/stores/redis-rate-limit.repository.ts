@@ -9,6 +9,7 @@ import {
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
 import { RedisConnection } from "../connection/redis-connection.js";
+import { writing } from "../connection/outcome.js";
 import { keyOf, runScript, type RedisScript } from "../connection/scripts.js";
 import { ADD_TO_WINDOW, PAUSE, RENEW_SLOT, TAKE_SLOT } from "./rate-limits/rate-limit-scripts.js";
 
@@ -70,9 +71,8 @@ export class RedisRateLimitRepository extends RateLimitRepository {
   }
 
   async release(rateLimitLease: RateLimitLease): Promise<void> {
-    await this.connection.client.zRem(
-      this.#key("slots", rateLimitLease.key),
-      rateLimitLease.slotId,
+    await writing("ZREM", () =>
+      this.connection.client.zRem(this.#key("slots", rateLimitLease.key), rateLimitLease.slotId),
     );
   }
 
@@ -95,7 +95,9 @@ export class RedisRateLimitRepository extends RateLimitRepository {
   }
 
   async clearWindow(key: string): Promise<void> {
-    await this.connection.client.del([this.#key("window", key), this.#key("window-amounts", key)]);
+    await writing("DEL", () =>
+      this.connection.client.del([this.#key("window", key), this.#key("window-amounts", key)]),
+    );
   }
 
   async pauseUntil(key: string, until: Date): Promise<void> {

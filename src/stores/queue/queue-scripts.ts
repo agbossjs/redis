@@ -96,7 +96,10 @@ return 1
  * The depth (agbossjs/agboss#485): KEYS the queue, the queued by time, the running — the queued
  * count, the running count and the longest-waiting queued member (false: none), in one round trip.
  */
-export const DEPTH = new RedisScript(`
+export const DEPTH = new RedisScript(
+  `
 local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)
 return { redis.call('ZCARD', KEYS[1]), redis.call('SCARD', KEYS[3]), oldest[1] or false }
-`);
+`,
+  true,
+);

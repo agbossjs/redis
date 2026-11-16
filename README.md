@@ -113,6 +113,32 @@ Size `maxmemory` for the lease keys: a tree's lease key is never deleted (its ep
 — about 150 bytes per tree, for good. The rate-limit keys expire an hour after the last thing in
 them matters; a child's row goes when its tree ends.
 
+## A write whose answer was lost
+
+A Redis write whose answer never came back may still have been applied: a script runs to its end on
+the server (and is never rolled back) even when the connection dies while it runs. Every write of
+the stores — each script that changes a key, and the rate limits' direct `ZREM` and `DEL` — that
+fails after it was sent therefore rejects with `StoreOutcomeUnknownError` (`store.outcome-unknown`,
+`source: Transport`, the driver's error as `cause`). The framework never takes such a call as done
+and never as not done: under a lease it hands the tree over, and the next holder reconciles
+(agbossjs/agboss#1017). A read (the depth script, `GET`, `HGETALL`, `EXISTS`) keeps the driver's
+own error. The rule is a whitelist — an error is **known**, rethrown as it is, only when it proves
+the command never ran; every other error, and any shape this package does not recognise, is unknown.
+
+| Error                                                                                                                                                                                                                                     | Reading                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `ClientOfflineError`, `ClientClosedError`, `The queue is full`, `ConnectionTimeoutError` (the connect timeout), `ReconnectStrategyError`, `RootNodesUnavailableError`, `MaxCommandRedirectionsError`                                      | known: never sent                                          |
+| `ECONNREFUSED`, `ENOTFOUND`, `EAI_AGAIN` of a `connect` / `getaddrinfo`                                                                                                                                                                   | known: no connection was made                              |
+| `ErrorReply` of `NOSCRIPT` (the script is run once with `EVAL`), `BUSY`, `LOADING`, `READONLY`, `MASTERDOWN`, `NOAUTH`, `NOPERM`, `CLUSTERDOWN`, `NOREPLICAS` before the script ran                                                       | known: refused                                             |
+| the same words from inside a script (the reply ends `script: <sha>, on @user_script:<line>.`), `OOM`, `WRONGTYPE`, any other `ERR`                                                                                                        | unknown: an earlier command of the script may have written |
+| `SocketClosedUnexpectedlyError`, `ECONNRESET`, `EPIPE`, `ETIMEDOUT`, any other Node system, TLS or stream error, `SocketTimeoutError` and `SocketTimeoutDuringMaintenanceError` (silence on an open connection), `DisconnectsClientError` | unknown                                                    |
+| `AbortError`, a command `TimeoutError`, any other error class, a value that is no `Error`                                                                                                                                                 | unknown                                                    |
+
+A command issued while the connection is down waits in the client's offline queue and runs once it
+is back, so it is not an error at all; one cut off before its bytes reached the server is
+indistinguishable from one whose answer was lost, and reads as unknown too — it costs one hand-over,
+never a lost charge.
+
 ## Failover
 
 Redis replicates asynchronously: an epoch the primary acknowledged may not be on a replica when that
@@ -172,7 +198,7 @@ and SQLite lease stores keep their ids and their leases in one database, so they
 test) holds one [node-redis](https://github.com/redis/node-redis) client (`@redis/client`) per
 application instance. At `onInit` it connects and runs the start checks. If the server is down, the
 start fails after five quick retries instead of hanging; once connected, a dropped connection is
-retried indefinitely (an operation in flight rejects, and the core hands the tree over).
+retried indefinitely (an operation in flight rejects as of unknown outcome, and the core hands the tree over).
 
 Its checks are queries and assertions apart (agbossjs/agboss#891): `topology()` reports the
 server's `role`, whether cluster mode is on and each problem, `durability()` each durability setting
