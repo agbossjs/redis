@@ -24,11 +24,11 @@ let server: PausableServer;
 beforeAll(async () => {
   server = await startRedis();
 }, 120_000);
-afterEach(() => {
-  server.unpause();
+afterEach(async () => {
+  await server.unpause();
 });
-afterAll(() => {
-  server.remove();
+afterAll(async () => {
+  await server.remove();
 });
 
 describe.skipIf(!HAS_DOCKER)("#923: onDestroy against a paused Redis", () => {
@@ -36,12 +36,12 @@ describe.skipIf(!HAS_DOCKER)("#923: onDestroy against a paused Redis", () => {
     const unhandled = watchUnhandled();
     const connection = new RedisConnection({ url: server.url }, new RealClock());
     await connection.onInit();
-    server.pause();
+    await server.pause();
     await sleep(500);
 
     const outcome = await endsWithin(connection.onDestroy(), MARGIN_MS);
     const stillOpen = connection.client.isOpen;
-    server.unpause();
+    await server.unpause();
     await sleep(1000);
     unhandled.stop();
 
@@ -54,7 +54,7 @@ describe.skipIf(!HAS_DOCKER)("#923: onDestroy against a paused Redis", () => {
     const unhandled = watchUnhandled();
     const connection = new RedisConnection({ url: server.url }, new RealClock());
     await connection.onInit();
-    server.pause();
+    await server.pause();
     await sleep(500);
     const inFlight = connection.client.get("fix-923-key");
     const failed = inFlight.then(
@@ -63,7 +63,7 @@ describe.skipIf(!HAS_DOCKER)("#923: onDestroy against a paused Redis", () => {
     );
 
     const outcome = await endsWithin(connection.onDestroy(), MARGIN_MS);
-    server.unpause();
+    await server.unpause();
     await sleep(1000);
     unhandled.stop();
 
@@ -83,13 +83,13 @@ describe.skipIf(!HAS_DOCKER)("#923: onDestroy against a paused Redis", () => {
       () => undefined,
       connection.clock,
     );
-    server.pause();
+    await server.pause();
     await sleep(500);
 
     const outcome = await endsWithin(watch.close(), MARGIN_MS);
     const stillOpen = subscriber.isOpen;
     const destroyed = await endsWithin(connection.onDestroy(), MARGIN_MS);
-    server.unpause();
+    await server.unpause();
     await sleep(1000);
     unhandled.stop();
 

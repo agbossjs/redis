@@ -12,11 +12,19 @@ const URL = "redis://app:secret@cache:6379/0";
 
 describe("the environment fields of the Redis stores", () => {
   it("redisUrl is a Secret: its revealed value is the URL; the opt-out is optional", () => {
-    expect(settingsOfEnvironment({ redisUrl: revealing(URL) })).toEqual({
+    expect(settingsOfEnvironment({ redisUrl: revealing(URL) })).toStrictEqual({
       url: URL,
       durabilityOptOut: undefined,
     });
   });
+
+  it.each([null, { reveal: "not a function" }, 42])(
+    "a redisUrl of %j, no Secret, is the named error",
+    (redisUrl) => {
+      expect(() => settingsOfEnvironment({ redisUrl })).toThrow(RedisSettingsError);
+      expect(() => settingsOfEnvironment({ redisUrl })).toThrow(/redisUrl must be a Secret/);
+    },
+  );
 
   it("redisDurabilityOptOut is read when it names the lost guarantee exactly", () => {
     const settings = settingsOfEnvironment({
@@ -67,7 +75,7 @@ describe("the environment fields of the Redis stores", () => {
 
   it("every problem is listed at once", () => {
     expect(() => settingsOfEnvironment({ redisDurabilityOptOut: "yes" })).toThrow(
-      /redisUrl is missing.*redisDurabilityOptOut must be exactly/,
+      /redisUrl is missing[^;]*; redisDurabilityOptOut must be exactly/,
     );
   });
 

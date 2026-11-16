@@ -56,7 +56,11 @@ describe("durabilityProblemsOf: the server's settings", () => {
     "appendfsync %s: an acknowledged write is lost in a crash",
     (fsync) => {
       expect(durabilityProblemsOf({ ...DURABLE, appendfsync: fsync })).toEqual([
-        expect.stringMatching(new RegExp(`^appendfsync is ${fsync}: .*set appendfsync always$`)),
+        expect.stringMatching(
+          new RegExp(
+            `^appendfsync is ${fsync}: a write acknowledged before its fsync is lost in a crash.*set appendfsync always$`,
+          ),
+        ),
       ]);
     },
   );
@@ -147,7 +151,7 @@ describe("AC4: durability is a report, requireDurable the start check's verdict"
   it("AC4: durable, no opt-out: no problem, no optOut in the report", () => {
     const durability = durabilityOf([], undefined);
 
-    expect(durability).toEqual({ problems: [] });
+    expect(durability).toStrictEqual({ problems: [] });
     expect(() => {
       requireDurable(durability);
     }).not.toThrow();

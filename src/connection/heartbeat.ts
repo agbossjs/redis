@@ -30,7 +30,7 @@ export async function watchLiveness(options: LivenessOptions): Promise<string | 
     const outcome = await Promise.race([
       ping().then(
         () => "answered",
-        (error: unknown) => `the ping failed: ${error instanceof Error ? error.message : "error"}`,
+        (error: unknown) => `the ping failed: ${String(error)}`,
       ),
       clock
         .sleep(half, AbortSignal.any([signal, answered.signal]))

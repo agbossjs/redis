@@ -1,6 +1,21 @@
 import type { ChildExecutionQueueWatch, Clock } from "@agboss/core";
 import { closeBounded, destroyed } from "../../connection/close-bounded.js";
-import type { RedisClient } from "../../connection/redis-connection.js";
+
+/**
+ * What the watch uses of its subscriber, a node-redis client of its own
+ * (`RedisConnection.subscriber()`): its state, its `ready` event, connect, subscribe, a ping (the
+ * liveness watch), an orderly close and a destroy. Narrow, so a test drives each event itself.
+ */
+export interface SubscriberClient {
+  readonly isReady: boolean;
+  readonly isOpen: boolean;
+  on(event: "ready", listener: () => void): unknown;
+  connect(): Promise<unknown>;
+  subscribe(channel: string, listener: () => void): Promise<unknown>;
+  ping(): Promise<unknown>;
+  close(): Promise<unknown>;
+  destroy(): void;
+}
 
 /**
  * The child queue's watch (agbossjs/agboss#777) on `subscriber`, a client of its own: connected and
@@ -11,7 +26,7 @@ import type { RedisClient } from "../../connection/redis-connection.js";
  * A subscriber already connected is used as it is.
  */
 export async function openQueueWatch(
-  subscriber: RedisClient,
+  subscriber: SubscriberClient,
   channel: string,
   onQueued: () => void,
   clock?: Clock,

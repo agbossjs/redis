@@ -13,28 +13,35 @@ export interface Closable {
   destroy(): void;
 }
 
+/** How a bounded close ended: in order, or by destroying a socket the server left unanswered. */
+export enum CloseOutcome {
+  Closed = "closed",
+  Destroyed = "destroyed",
+}
+
 /**
  * Closes `client` in order (`QUIT`, the commands in flight answered); when that has not ended
  * within `CLOSE_GRACE` on `clock` — the server went quiet — destroys its socket: the commands in
- * flight reject, nothing is left open. A close that fails afterwards is dropped (no unhandled
- * rejection). Without a `clock` (a connection built by a script) the close is the orderly one only.
+ * flight reject, nothing is left open. A close that fails is ended too (no unhandled rejection).
+ * Without a `clock` (a connection built by a script) the close is the orderly one only. The grace's
+ * wait ends with the close: no timer is left behind.
  */
-export async function closeBounded(client: Closable, clock: Clock | undefined): Promise<void> {
+export async function closeBounded(
+  client: Closable,
+  clock: Clock | undefined,
+): Promise<CloseOutcome> {
   const orderly = client.close().then(
-    () => true,
-    () => true,
+    () => CloseOutcome.Closed,
+    () => CloseOutcome.Closed,
   );
-  if (clock === undefined) {
-    await orderly;
-    return;
-  }
+  if (clock === undefined) return orderly;
   const waiting = new AbortController();
-  const quiet = clock.sleep(CLOSE_GRACE, waiting.signal).then(
-    () => false,
-    () => true,
-  );
+  // once the close ended first, the aborted wait resolves into a race already decided
+  const quiet = clock.sleep(CLOSE_GRACE, waiting.signal).then(() => CloseOutcome.Destroyed);
   try {
-    if (!(await Promise.race([orderly, quiet]))) destroyed(client);
+    const outcome = await Promise.race([orderly, quiet]);
+    if (outcome === CloseOutcome.Destroyed) destroyed(client);
+    return outcome;
   } finally {
     waiting.abort();
   }

@@ -16,15 +16,16 @@ import {
 const PRIMARY = "# Replication\r\nrole:master\r\nconnected_slaves:0\r\n";
 const STANDALONE = "# Cluster\r\ncluster_enabled:0\r\n";
 
-const infoOf =
-  (replication: string, cluster: string): InfoOf =>
-  async (section) =>
-    section === "replication" ? replication : cluster;
+/** A server answering only the sections asked by name: a whole `INFO` would answer both. */
+const infoOf = (replication: string, cluster: string): InfoOf => {
+  const sections: Readonly<Record<string, string>> = { replication, cluster };
+  return async (section) => sections[section] ?? "";
+};
 
 describe("the deployment check: one primary", () => {
   it("reads the field:value lines of an INFO reply, past its section headers", () => {
     expect(infoFieldsOf(PRIMARY)).toEqual({ role: "master", connected_slaves: "0" });
-    expect(infoFieldsOf("# Cluster\ncluster_enabled:1\n\nbad line\n")).toEqual({
+    expect(infoFieldsOf("# Cluster\ncluster_enabled:1\n\nbad line\n:no name\n")).toEqual({
       cluster_enabled: "1",
     });
   });

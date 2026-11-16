@@ -25,8 +25,8 @@ let server: PausableServer;
 beforeAll(async () => {
   if (HAS_DOCKER) server = await startRedis();
 }, 120_000);
-afterAll(() => {
-  if (HAS_DOCKER) server.remove();
+afterAll(async () => {
+  if (HAS_DOCKER) await server.remove();
 });
 
 describe.skipIf(!HAS_DOCKER)("#954: close() against a paused Redis leaves no socket open", () => {
@@ -41,12 +41,12 @@ describe.skipIf(!HAS_DOCKER)("#954: close() against a paused Redis leaves no soc
     try {
       const app = await createApp(StopApplication, { env: "stop" });
       // paused as the child queue's watch is still opening its subscriber: no worker owns it yet
-      server.pause();
+      await server.pause();
       await sleep(2000);
 
       await app.close({ timeout: seconds(5) });
       const open = sockets.open();
-      server.unpause();
+      await server.unpause();
       await sleep(500);
 
       expect(open).toBe(0);
@@ -54,7 +54,7 @@ describe.skipIf(!HAS_DOCKER)("#954: close() against a paused Redis leaves no soc
     } finally {
       sockets.stop();
       unhandled.stop();
-      server.unpause();
+      await server.unpause();
     }
   }, 60_000);
 });
@@ -81,7 +81,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a watch that resubscribes while the connecti
       livenessSeconds: 2,
       logger,
     });
-    server.pause();
+    await server.pause();
     for (let waited = 0; logger.entries.length === 0 && waited < 10_000; waited += 100) {
       await sleep(100);
     }
@@ -103,7 +103,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a watch that resubscribes while the connecti
     } finally {
       sockets.stop();
       unhandled.stop();
-      server.unpause();
+      await server.unpause();
     }
   }, 60_000);
 
@@ -117,7 +117,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a watch that resubscribes while the connecti
       expect(sockets.open()).toBe(0);
     } finally {
       sockets.stop();
-      server.unpause();
+      await server.unpause();
     }
   }, 60_000);
 });

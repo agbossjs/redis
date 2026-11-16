@@ -47,7 +47,7 @@ const Row = z.object({
 });
 
 /** A row as the contract gives it back. */
-const childOf = (fields: Readonly<Record<string, string>>): QueuedChildExecution => {
+const childOf = (fields: Readonly<Record<string, string | undefined>>): QueuedChildExecution => {
   const row = Row.parse(fields);
   return {
     ...row,
@@ -58,12 +58,12 @@ const childOf = (fields: Readonly<Record<string, string>>): QueuedChildExecution
   };
 };
 
-/** A flat `HGETALL` reply (name, value, …) as fields. */
-const fieldsOf = (reply: unknown): Record<string, string> => {
+/** A flat `HGETALL` reply (name, value, …) as fields: each name at an even place, its value after it. */
+const fieldsOf = (reply: unknown): Record<string, string | undefined> => {
   const flat = z.array(z.string()).parse(reply);
-  const fields: Record<string, string> = {};
-  for (let at = 0; at + 1 < flat.length; at += 2) fields[flat[at] ?? ""] = flat[at + 1] ?? "";
-  return fields;
+  return Object.fromEntries(
+    flat.flatMap((name, at) => (at % 2 === 0 ? [[name, flat[at + 1]]] : [])),
+  );
 };
 
 /** The queue member's time part: `queuedAt` shifted to be positive, 17 digits — sorts by time. */
@@ -74,8 +74,8 @@ const queuedAtText = (queuedAt: Date): string =>
 const queuedAtOf = (member: string): Date =>
   new Date(Number(member.slice(0, QUEUED_AT_DIGITS)) - 8.64e15);
 
-/** The depth script's reply: the queued count, the running count, the oldest queued member. */
-const DepthReply = z.tuple([z.number().int(), z.number().int()]).rest(z.string().nullable());
+/** The depth script's reply: the queued count, the running count, the oldest queued member or nil. */
+const DepthReply = z.tuple([z.number().int(), z.number().int(), z.string().nullable()]);
 
 /**
  * `ChildExecutionQueueRepository` on Redis (agbossjs/agboss#693): a child is one hash, the queued
@@ -121,6 +121,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
       ],
       [
         ...[id, `${queuedAtText(child.queuedAt)}${id}`, String(-child.depth)],
+        // Stryker disable next-line StringLiteral: a stored claim is a number; any other text is none
         child.claimedAt === undefined ? "" : String(child.claimedAt.getTime()),
         this.#queuedChannel(),
         ...Object.entries(fields).flat(),
@@ -134,7 +135,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     executionId: string,
   ): Promise<QueuedChildExecution | undefined> {
     const fields = await this.connection.client.hGetAll(this.#rowKey(tenantId, executionId));
-    return Object.keys(fields).length === 0 ? undefined : childOf(withoutMember(fields));
+    return Object.keys(fields).length === 0 ? undefined : childOf(fields);
   }
 
   async claimFirstByStatusQueuedOrderByDepthDesc(): Promise<QueuedChildExecution | undefined> {
@@ -148,7 +149,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
         String(this.clock.now().getTime()),
       ],
     );
-    return reply === null ? undefined : childOf(withoutMember(fieldsOf(reply)));
+    return reply === null ? undefined : childOf(fieldsOf(reply));
   }
 
   async completeByTenantIdAndExecutionId(
@@ -188,13 +189,14 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
       this.connection.client,
       DEPTH,
       [this.#queueKey(), this.#queuedByTimeKey(), this.#runningKey()],
+      // Stryker disable next-line ArrayDeclaration: the depth script reads no ARGV
       [],
     );
     const [queued, running, oldest] = DepthReply.parse(reply);
     return {
       queued,
       running,
-      oldestQueuedAt: oldest === undefined || oldest === null ? undefined : queuedAtOf(oldest),
+      oldestQueuedAt: oldest === null ? undefined : queuedAtOf(oldest),
     };
   }
 
@@ -244,9 +246,4 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
   #treeKey(tree: Pick<QueuedChildExecution, "tenantId" | "rootExecutionId">): string {
     return keyOf(this.connection.keyPrefix, "children-of", tree.tenantId, tree.rootExecutionId);
   }
-}
-
-/** The row's fields without the queue member it keeps for itself. */
-function withoutMember(fields: Readonly<Record<string, string>>): Record<string, string> {
-  return Object.fromEntries(Object.entries(fields).filter(([name]) => name !== "member"));
 }

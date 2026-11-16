@@ -75,8 +75,13 @@ export function subscriberReconnectStrategyOf(
 
 type ReconnectStrategy = (retries: number, cause: Error) => number | Error;
 
-/** A client of `url`: parsed here, connected by its owner. */
-function clientOf(
+/**
+ * A client of `url`: parsed here, connected by its owner; its reconnect strategy knows whether it
+ * was ever ready. Not part of the package's API.
+ *
+ * @internal
+ */
+export function clientOf(
   url: string,
   strategyOf: (wasReady: () => boolean) => ReconnectStrategy = reconnectStrategyOf,
 ): RedisClient {
@@ -254,7 +259,6 @@ export class RedisConnection implements OnInit, OnDestroy {
   async onDestroy(): Promise<void> {
     this.#closed.abort();
     for (const subscriber of [...this.#subscribers]) destroyed(subscriber);
-    this.#subscribers.clear();
     await closeBounded(this.client, this.clock);
   }
 }
