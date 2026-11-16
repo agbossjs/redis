@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   type ExecutionIdentity,
   type ExecutionIdStore,
+  type ExecutionTree,
   type ExecutionLeaseRepository,
 } from "@agboss/core";
 import type { ContractTarget, StoreInstanceContext } from "@agboss/core/testing/contracts";
@@ -30,8 +31,21 @@ export interface TestKeySpace {
  * durable lease store under `EXECUTION_ID_STORE` keeps them (#591, #891) — never in Redis (#527).
  * One insert-if-absent by the id.
  */
-export class SharedKeptIds implements ExecutionIdStore {
+export class SharedKeptIds
+  implements ExecutionIdStore, Pick<ExecutionLeaseRepository, "requestCancel" | "isCancelRequested">
+{
   readonly ids = new Map<string, string>();
+  /** The trees' cancel marks, on the durable store's lease rows (#1117), shared as the ids are. */
+  readonly cancels = new Set<string>();
+
+  requestCancel({ tenantId, rootExecutionId }: ExecutionTree): Promise<void> {
+    this.cancels.add(`${tenantId}\u0000${rootExecutionId}`);
+    return Promise.resolve();
+  }
+
+  isCancelRequested({ tenantId, rootExecutionId }: ExecutionTree): Promise<boolean> {
+    return Promise.resolve(this.cancels.has(`${tenantId}\u0000${rootExecutionId}`));
+  }
 
   claimExecutionId({ executionId, tenantId }: ExecutionIdentity): Promise<boolean> {
     if (this.ids.has(executionId)) return Promise.resolve(false);
@@ -64,6 +78,7 @@ export function testKeySpace(name: string): TestKeySpace {
     idle,
     reset: async () => {
       keptIds.ids.clear();
+      keptIds.cancels.clear();
       await removeKeys(await adminOf(), prefix);
     },
     close: async () => {

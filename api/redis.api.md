@@ -16,6 +16,7 @@ import { ExecutionIdentity } from '@agboss/core';
 import { ExecutionIdStore } from '@agboss/core';
 import { ExecutionLease } from '@agboss/core';
 import { ExecutionLeaseRepository } from '@agboss/core';
+import { ExecutionTree } from '@agboss/core';
 import { Logger } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
 import { OnDestroy } from '@agboss/core';
@@ -121,6 +122,7 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
     // (undocumented)
     acquire(tenantId: string, rootExecutionId: string, duration: Milliseconds): Promise<ExecutionLease | undefined>;
     claimExecutionId(identity: ExecutionIdentity): Promise<boolean>;
+    isCancelRequested(tree: ExecutionTree): Promise<boolean>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
@@ -129,7 +131,7 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
     release(held: ExecutionLease): Promise<void>;
     // (undocumented)
     renew(held: ExecutionLease, duration: Milliseconds): Promise<Milliseconds | undefined>;
-    requestCancel(): Promise<void>;
+    requestCancel(tree: ExecutionTree): Promise<void>;
     // (undocumented)
     retire(held: ExecutionLease): Promise<void>;
     static readonly store: StoreDescriptor;

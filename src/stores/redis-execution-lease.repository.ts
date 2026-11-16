@@ -6,6 +6,7 @@ import {
   StoreClock,
   type ExecutionIdentity,
   type ExecutionIdStore,
+  type ExecutionTree,
   type ExecutionLease,
   type StoreDescriptor,
 } from "@agboss/core";
@@ -16,6 +17,28 @@ import { RedisConnection } from "../connection/redis-connection.js";
 import { keyOf, runScript, type RedisScript } from "../connection/scripts.js";
 import { ACQUIRE, CLOSE, RECLAIM, RENEW, YIELD } from "./leases/lease-scripts.js";
 import { storeNowArgumentOf } from "./store-time.js";
+
+/**
+ * What the durable store under `EXECUTION_ID_STORE` answers here: the kept ids and the tree's cancel
+ * mark (#1152). Any lease store of PostgreSQL, MongoDB or SQLite is one; the core types the token as
+ * the ids alone, so the constructor checks the rest at assembly rather than at the first cancel.
+ */
+type DurableLeaseStore = Pick<
+  ExecutionLeaseRepository,
+  "claimExecutionId" | "requestCancel" | "isCancelRequested"
+>;
+
+const DURABLE_METHODS = ["claimExecutionId", "requestCancel", "isCancelRequested"] as const;
+
+/** The durable lease store `given` is, or a `TypeError` naming the method it lacks. */
+function durableLeaseStoreOf(given: ExecutionIdStore): DurableLeaseStore {
+  for (const method of DURABLE_METHODS)
+    if (typeof (given as Partial<Record<string, unknown>>)[method] !== "function")
+      throw new TypeError(
+        `the store under EXECUTION_ID_STORE must be a durable lease store (PostgreSQL, MongoDB, SQLite): it has no ${method}`,
+      );
+  return given as DurableLeaseStore;
+}
 
 const Taken = z.union([
   z.tuple([z.number(), z.number(), z.number()]),
@@ -40,7 +63,8 @@ const remainingOf = (value: number): Milliseconds => Math.max(0, Math.floor(valu
  * must check the lease in its own transaction, which Redis and PostgreSQL cannot share. An
  * application on these leases lists none of them.
  *
- * **The execution ids** it hands out (agbossjs/agboss#591) are never kept in Redis
+ * **The execution ids** it hands out (agbossjs/agboss#591) and **the trees' cancel marks** (#909, #1117,
+ * #1152) are never kept in Redis
  * (agbossjs/agboss#527): they live where the application's durable rows live — the store the
  * application gives under `EXECUTION_ID_STORE` (agbossjs/agboss#891), its PostgreSQL or MongoDB
  * lease store, created by the container under that token only (no second lease store, no `new`):
@@ -61,26 +85,32 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
     private readonly connection: RedisConnection,
     private readonly clock: StoreClock,
     private readonly applicationContext: ApplicationContext,
-    private readonly executionIds: ExecutionIdStore,
+    executionIds: ExecutionIdStore,
   ) {
     super();
+    this.executionIds = durableLeaseStoreOf(executionIds);
   }
+
+  private readonly executionIds: DurableLeaseStore;
 
   ping(): Promise<void> {
     return this.connection.ping();
   }
 
   /**
-   * Writes nothing (agbossjs/agboss#909, #1117): the cancel's mark is permanent and lives on the tree's
-   * lease row in a fencing backend, where the fenced-effect and outbound-call stores read it in the
-   * transaction that checks the lease. Redis keeps no such row to mark — no seed key for a tree never
-   * acquired, no field on a lease key — and none of those stores
-   * may sit beside Redis leases (A2: a fenced write of another backend over them is refused at
-   * assembly) — an application on these leases has no fenced write to refuse. Its holder reads a
-   * cancel request at its next renewal, as before; the lease is not touched.
+   * The tree's cancel mark goes to the durable store under `EXECUTION_ID_STORE`, as the kept execution
+   * ids do (agbossjs/agboss#909, #1117, #1152): the mark is permanent and lives on the tree's lease row
+   * there (PostgreSQL, MongoDB), where its fencing stores read it in the transaction that checks the
+   * lease. Nothing of it is written to Redis: a Redis that is emptied, restarted from an old snapshot
+   * or failed over keeps no mark to lose. It changes no Redis lease.
    */
-  requestCancel(): Promise<void> {
-    return Promise.resolve();
+  requestCancel(tree: ExecutionTree): Promise<void> {
+    return this.executionIds.requestCancel(tree);
+  }
+
+  /** Whether the mark is set: read from the durable store, never from Redis (#1152). */
+  isCancelRequested(tree: ExecutionTree): Promise<boolean> {
+    return this.executionIds.isCancelRequested(tree);
   }
 
   /** Kept by the durable store under `EXECUTION_ID_STORE`, never in Redis (#527, #891). */
