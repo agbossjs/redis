@@ -112,3 +112,18 @@ export class RedisDurabilityError extends AGBossError {
     this.problems = options.problems;
   }
 }
+
+/**
+ * A client was asked of a connection that is stopping or stopped (agbossjs/agboss#954): the
+ * connection's stop destroyed what it handed out, and a late reconnect of a watch the stop gave
+ * up on must not open a socket nobody closes. Internal: not exported from the package.
+ */
+export class RedisConnectionClosedError extends AGBossError {
+  static override readonly code = "redis.connection-closed" as const;
+  declare readonly code: typeof RedisConnectionClosedError.code;
+  override name = "RedisConnectionClosedError";
+
+  constructor() {
+    super("the Redis connection is closed: no new client is handed out");
+  }
+}

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { createServer } from "node:net";
+import { createServer, Socket } from "node:net";
 import { Clock } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
 
@@ -87,7 +87,16 @@ export async function startRedis(): Promise<PausableServer> {
   const name = `agboss-923-redis-${String(process.pid)}`;
   const port = await freePort();
   docker(
-    ...["run", "-d", "--name", name, "--cpus", "1", "--memory", "256m"],
+    ...[
+      "run",
+      "-d",
+      "--name",
+      name,
+      "--cpus",
+      process.env.AGBOSS_PAUSE_CPUS ?? "1",
+      "--memory",
+      "256m",
+    ],
     ...["-p", `127.0.0.1:${String(port)}:6379`, "redis:7"],
     ...["redis-server", "--appendonly", "yes", "--appendfsync", "always"],
   );
@@ -149,4 +158,30 @@ export class RealClock extends Clock {
       );
     });
   }
+}
+
+/**
+ * The sockets this process opens to `port` from now on, counted by the sockets themselves
+ * (`destroyed`), not by a client's own `isOpen` (false while a client is closing, its socket still
+ * up: agbossjs/agboss#954).
+ */
+export function trackSockets(port: number): { open(): number; stop(): void } {
+  const sockets: Socket[] = [];
+  const original: unknown = Reflect.get(Socket.prototype, "connect");
+  if (typeof original !== "function") throw new Error("net.Socket has no connect");
+  const patched = function (this: Socket, ...args: unknown[]): Socket {
+    // node passes the options as the first element of an array when a socket is a client's
+    const first: unknown = Array.isArray(args[0]) ? (args[0] as unknown[])[0] : args[0];
+    if (typeof first === "object" && first !== null && (first as { port?: number }).port === port)
+      sockets.push(this);
+    Reflect.apply(original, this, args);
+    return this;
+  };
+  Reflect.set(Socket.prototype, "connect", patched);
+  return {
+    open: () => sockets.filter((socket) => !socket.destroyed).length,
+    stop: () => {
+      Reflect.set(Socket.prototype, "connect", original);
+    },
+  };
 }
