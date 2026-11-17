@@ -10,6 +10,16 @@ import { writing } from "./outcome.js";
  * accepts (a cluster is refused at start). A script that only reads (`readOnly`) fails with the
  * driver's own error; any other is a write, whose failure after the send is of unknown outcome
  * (`outcome.ts`, agbossjs/agboss#1017).
+ *
+ * Invariant of every script of the stores: it never raises or returns an error reply of its own
+ * (`redis.error_reply(...)`, `return { err = ... }`) whose text starts with a word of
+ * `REFUSED_BEFORE_RUN` (`NOSCRIPT`, `BUSY`, `LOADING`, `READONLY`, `MASTERDOWN`, `NOAUTH`, `NOPERM`,
+ * `CLUSTERDOWN`, `NOREPLICAS`), and never builds such a reply from a variable. `outcome.ts` reads an
+ * `ErrorReply` that starts with one of those words and lacks the `@user_script` suffix the server
+ * appends to the errors of `redis.call` as a refusal BEFORE the script ran (known, the step fails): a
+ * script's own reply carries no such suffix, so one starting with the word, sent after a write, would
+ * read as known although the write was applied. `tests/connection/script-replies.test.ts` scans
+ * the sources of `src/stores` and fails on any.
  */
 export class RedisScript {
   readonly sha: string;

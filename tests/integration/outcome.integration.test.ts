@@ -86,6 +86,19 @@ describe.skipIf(DURABLE_URL === "")(
       await direct.close();
     });
 
+    /**
+     * The effect a cut link left: the proxy forwards the bytes and cuts the client at once, so the
+     * server applies them a moment later — waited for, not slept for.
+     */
+    const applied = async (read: () => Promise<unknown>, expected: unknown): Promise<void> => {
+      await vi.waitFor(
+        async () => {
+          expect(await read()).toBe(expected);
+        },
+        { timeout: 10_000 },
+      );
+    };
+
     const key = (name: string): string => `${PREFIX}${name}`;
 
     it("the EVALSHA is forwarded and applied, its answer is lost: unknown, and the effect IS in Redis", async () => {
@@ -103,7 +116,7 @@ describe.skipIf(DURABLE_URL === "")(
         store: "RedisConnection",
       });
       expect(error).toHaveProperty("cause");
-      expect(await direct.get(key("applied"))).toBe("1");
+      await applied(async () => direct.get(key("applied")), "1");
     });
 
     it("a store's call: the lease IS taken in Redis, the call fails as unknown, not as a failure", async () => {
@@ -122,7 +135,7 @@ describe.skipIf(DURABLE_URL === "")(
         .catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(StoreOutcomeUnknownError);
-      expect(await direct.exists(`${PREFIX}lease:["default","lost-answer-1"]`)).toBe(1);
+      await applied(async () => direct.exists(`${PREFIX}lease:["default","lost-answer-1"]`), 1);
     });
 
     it("the link cut before the EVALSHA bytes reach the server: unknown all the same, and nothing applied", async () => {
@@ -280,8 +293,8 @@ describe.skipIf(DURABLE_URL === "")(
 
       expect(released).toMatchObject({ code: "store.outcome-unknown", operation: "ZREM" });
       expect(cleared).toMatchObject({ code: "store.outcome-unknown", operation: "DEL" });
-      expect(await direct.zCard(slotsKey)).toBe(0);
-      expect(await direct.exists(windowKey)).toBe(0);
+      await applied(async () => direct.zCard(slotsKey), 0);
+      await applied(async () => direct.exists(windowKey), 0);
     });
 
     it("the child queue's save: unknown, and the child IS queued; its depth, a read, keeps the driver's error", async () => {
@@ -305,7 +318,7 @@ describe.skipIf(DURABLE_URL === "")(
       const depth = await queue.countByStatus().catch((caught: unknown) => caught);
 
       expect(saved).toMatchObject({ code: "store.outcome-unknown", store: "RedisConnection" });
-      expect(await direct.exists(`${PREFIX}child:["default","outcome-child"]`)).toBe(1);
+      await applied(async () => direct.exists(`${PREFIX}child:["default","outcome-child"]`), 1);
       expect(depth).toBeInstanceOf(Error);
       expect(depth).not.toBeInstanceOf(StoreOutcomeUnknownError);
     });

@@ -20,7 +20,7 @@ export const SHARDS = {
     ],
     tests: [
       "tests/contracts/store-conformance.test.ts",
-      "tests/connection/{scripts,outcome}.test.ts",
+      "tests/connection/{scripts,outcome,script-replies}.test.ts",
       "tests/integration/{stores,stored-layout,lease-key-conflict,cancel-mark-durable,outcome}.integration.test.ts",
     ],
   },
