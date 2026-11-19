@@ -18,28 +18,6 @@ import { keyOf, runScript, type RedisScript } from "../connection/scripts.js";
 import { ACQUIRE, CLOSE, RECLAIM, RENEW, YIELD } from "./leases/lease-scripts.js";
 import { storeNowArgumentOf } from "./store-time.js";
 
-/**
- * What the durable store under `EXECUTION_ID_STORE` answers here: the kept ids and the tree's cancel
- * mark (#1152). Any lease store of PostgreSQL, MongoDB or SQLite is one; the core types the token as
- * the ids alone, so the constructor checks the rest at assembly rather than at the first cancel.
- */
-type DurableLeaseStore = Pick<
-  ExecutionLeaseRepository,
-  "claimExecutionId" | "requestCancel" | "isCancelRequested"
->;
-
-const DURABLE_METHODS = ["claimExecutionId", "requestCancel", "isCancelRequested"] as const;
-
-/** The durable lease store `given` is, or a `TypeError` naming the method it lacks. */
-function durableLeaseStoreOf(given: ExecutionIdStore): DurableLeaseStore {
-  for (const method of DURABLE_METHODS)
-    if (typeof (given as Partial<Record<string, unknown>>)[method] !== "function")
-      throw new TypeError(
-        `the store under EXECUTION_ID_STORE must be a durable lease store (PostgreSQL, MongoDB, SQLite): it has no ${method}`,
-      );
-  return given as DurableLeaseStore;
-}
-
 const Taken = z.union([
   z.tuple([z.number(), z.number(), z.number()]),
   z.tuple([z.number(), z.number(), z.number(), z.string(), z.number()]),
@@ -88,10 +66,10 @@ export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
     executionIds: ExecutionIdStore,
   ) {
     super();
-    this.executionIds = durableLeaseStoreOf(executionIds);
+    this.executionIds = executionIds;
   }
 
-  private readonly executionIds: DurableLeaseStore;
+  private readonly executionIds: ExecutionIdStore;
 
   ping(): Promise<void> {
     return this.connection.ping();
