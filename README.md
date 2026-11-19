@@ -66,8 +66,8 @@ its fencing stores read it. Redis keeps neither: `RedisExecutionLeaseRepository`
 store under `EXECUTION_ID_STORE` and writes nothing of them to Redis, so a Redis that is flushed,
 restarted from an old snapshot or failed over loses no cancel (a test empties a Redis and reads the
 mark back). The store under that token must be a durable lease store, not a stand-in that keeps ids
-only: the constructor refuses one that lacks `requestCancel` or `isCancelRequested`. The application
-gives it its
+only: the core's `ExecutionIdStore` carries `requestCancel` and `isCancelRequested`, so a store
+without them does not compile (agbossjs/agboss#1198). The application gives it its
 durable lease store by class — created by the container under that token only, so it is neither a
 second lease store (`[di.ambiguous-implementation]`) nor made with `new`:
 

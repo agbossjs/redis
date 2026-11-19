@@ -86,12 +86,5 @@ describe.skipIf(DURABLE_URL === "")(
         await store.isCancelRequested({ tenantId: "acme", rootExecutionId: "execution-1" }),
       ).toBe(false);
     });
-
-    it("a store under EXECUTION_ID_STORE that keeps ids only is refused at assembly, naming what it lacks", async () => {
-      const connection = await connect();
-      const idsOnly: ExecutionIdStore = { claimExecutionId: () => Promise.resolve(true) };
-
-      expect(() => storeOf(connection, idsOnly)).toThrow(/durable lease store.*no requestCancel/u);
-    });
   },
 );
