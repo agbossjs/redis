@@ -61,6 +61,19 @@ export const SHARDS = {
   },
 };
 
+/**
+ * The files of `src/` no shard mutates, each with its reason (agbossjs/redis#50):
+ * `tests/scripts/mutation-shards-complete.test.ts` fails for a file that is in a shard's `mutate`
+ * and here, and for one that is in neither, so a new module gets a conscious assignment.
+ */
+export const NON_SHARDED_SRC = new Set([
+  // the public surface: re-exports, no behaviour a mutant could change
+  "src/index.ts",
+  // the error classes: a name, a message and the fields the start checks fill; every constructor
+  // is read by the tests of the checks that throw it
+  "src/errors.ts",
+]);
+
 /** The shard `MUTATION_SHARD` names (default `leases`); a name of none fails. */
 export function chosenShard() {
   const name = process.env.MUTATION_SHARD ?? "leases";
