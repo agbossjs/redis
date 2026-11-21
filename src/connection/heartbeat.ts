@@ -13,6 +13,16 @@ export interface LivenessOptions {
 }
 
 /**
+ * Whether `signal` has aborted. A function of its own, called in the loop: a mutant of its body is counted by
+ * Stryker on every call, so a loop that then never ends is a Timeout of its hit limit within a second; the
+ * same test as a closure made before the loop is evaluated once, and the loop spins until the clock's limit
+ * (or the heap's end) — agbossjs/agboss#1367.
+ */
+function hasEnded(signal: AbortSignal): boolean {
+  return signal.aborted;
+}
+
+/**
  * Pings a connection every half of `liveness` until `signal` aborts (agbossjs/agboss#789): a
  * half-open TCP connection (a NAT or a load balancer that dropped its state) answers nothing and
  * fails nothing, so only a command that is not answered shows it. Every timer is on the `Clock`.
@@ -22,10 +32,9 @@ export interface LivenessOptions {
 export async function watchLiveness(options: LivenessOptions): Promise<string | undefined> {
   const { clock, livenessSeconds, ping, signal } = options;
   const half = seconds(livenessSeconds / 2);
-  const isEnded = (): boolean => signal.aborted;
   for (;;) {
     await clock.sleep(half, signal);
-    if (isEnded()) return undefined;
+    if (hasEnded(signal)) return undefined;
     const answered = new AbortController();
     const outcome = await Promise.race([
       ping().then(
@@ -37,7 +46,7 @@ export async function watchLiveness(options: LivenessOptions): Promise<string | 
         .then(() => `no answer to a ping in ${String(livenessSeconds / 2)} s`),
     ]);
     answered.abort();
-    if (isEnded()) return undefined;
+    if (hasEnded(signal)) return undefined;
     if (outcome !== "answered") return outcome;
   }
 }

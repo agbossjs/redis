@@ -4,6 +4,7 @@ import { minutes } from "@agboss/core/units";
 import { afterAll, describe } from "vitest";
 import { RedisChildExecutionQueueRepository, RedisRateLimitRepository } from "../../src/index.js";
 import { leasesOf, redisStore, testKeySpace } from "../support/redis-store.js";
+import { storesOfShard } from "./mutation-contracts.js";
 import { DURABLE_URL } from "../support/server.js";
 
 /**
@@ -31,7 +32,7 @@ describe.skipIf(DURABLE_URL === "")("the Redis stores through storeConformance",
     interleavings: { depth: 8, walks: 200, timeLimit: minutes(15) },
     reset: () => space.reset(),
     without: ["executionAuditLog", "fencedEffect", "outboundCall"],
-    stores: {
+    stores: storesOfShard({
       executionLease: redisStore(space, (connection, seam) => leasesOf(space, connection, seam)),
       // agbossjs/agboss#831: the queue has a watch (LISTEN / a change stream / pub/sub): declared
       childExecutionQueue: {
@@ -52,6 +53,6 @@ describe.skipIf(DURABLE_URL === "")("the Redis stores through storeConformance",
         (connection, seam) =>
           new RedisRateLimitRepository(connection, seam.clock, seam.application),
       ),
-    },
+    }),
   });
 });
