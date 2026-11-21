@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "shard": "leases",
+    "file": "src/connection/scripts.ts",
+    "mutator": "StringLiteral",
+    "replacement": "\"\"",
+    "anchor": "this.sha = createHash(\"sha1\").update(source).digest(\"hex\");",
+    "kind": "runtime-error",
+    "reason": "StringLiteral -> \"\": the hash algorithm of the script digest is empty, so createHash throws ('Digest method not supported') while the test files of the shard load, outside any test, which Stryker counts as an error and not as a kill; the same in two cold runs (the nightly of 2026-11-20 and this one)"
+  }
+]
