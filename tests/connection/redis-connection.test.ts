@@ -31,7 +31,7 @@ describe("RedisConnection: one client per application instance", () => {
       new TestApplicationContext({ redisUrl: revealing(URL) }),
     );
 
-    expect(connection.client.isOpen).toBe(false);
+    expect(connection.native.isOpen).toBe(false);
     await connection.onDestroy();
   });
 
@@ -41,7 +41,7 @@ describe("RedisConnection: one client per application instance", () => {
       durabilityOptOut: RedisDurabilityOptOut.AcknowledgedWritesMayBeLost,
     });
 
-    expect(connection.client.isOpen).toBe(false);
+    expect(connection.native.isOpen).toBe(false);
     await connection.onDestroy();
   });
 
@@ -119,7 +119,7 @@ describe("RedisConnection when the server does not answer", () => {
     const connection = new RedisConnection({ url: UNREACHABLE });
 
     await expect(connection.onInit()).rejects.toThrow(/ECONNREFUSED/);
-    expect(connection.client.isOpen).toBe(false);
+    expect(connection.native.isOpen).toBe(false);
     await connection.onDestroy();
   });
 });

@@ -6,6 +6,7 @@
  * window gone whole, and every store's `ping()` the server's own answer.
  */
 import {
+  ChildPlacement,
   ExecutionRecordStatus,
   StoreClock,
   StoreTimeSource,
@@ -81,7 +82,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#1213: what the stores keep"
     await limits.addToWindow("provider-1", 1, seconds(60));
     await limits.pauseUntil("provider-1", new Date(Date.now() + 60_000));
 
-    const keys = (await connection.client.keys(`${space.prefix}*`)).sort();
+    const keys = (await connection.native.keys(`${space.prefix}*`)).sort();
 
     expect(keys).toEqual(
       [
@@ -98,6 +99,40 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#1213: what the stores keep"
         keyOf(space.prefix, "rate-limit-window-amounts", "provider-1"),
       ].sort(),
     );
+  });
+
+  it("an isolated worker's child is on a queue of its own, with its placement and the instance to skip", async () => {
+    const queue = queueOn(connection);
+    await queue.saveIfAbsent({ ...child("isolated-1"), placement: ChildPlacement.IsolatedWorker });
+    await queue.saveIfAbsent({
+      ...child("other-1"),
+      ...{ placement: ChildPlacement.OtherWorker, excludeInstanceId: "instance-9" },
+    });
+
+    expect(await connection.native.zCard(`${space.prefix}children-queued-isolated`)).toBe(1);
+    expect(await connection.native.zCard(`${space.prefix}children-queued`)).toBe(1);
+    expect(await connection.native.zCard(`${space.prefix}children-queued-by-time`)).toBe(2);
+    expect(
+      await connection.native.hGet(
+        keyOf(space.prefix, "child", "default", "other-1"),
+        "excludeInstanceId",
+      ),
+    ).toBe("instance-9");
+    // the general claim never takes the isolated child: it is the targeted claim's
+    expect(await queue.claimFirstByStatusQueuedOrderByDepthDesc()).toMatchObject({
+      executionId: "other-1",
+    });
+    expect(await queue.claimFirstByStatusQueuedOrderByDepthDesc()).toBeUndefined();
+  });
+
+  it("a tree's marks are one cache key, pushed after the database's row and never read back", async () => {
+    const leases = leasesOn(connection);
+
+    await leases.requestCancel({ tenantId: "default", rootExecutionId: "root-1" });
+
+    expect(
+      await connection.native.hGetAll(keyOf(space.prefix, "lease-marks", "default", "root-1")),
+    ).toEqual({ c: "1" });
   });
 
   it("a claimed row whose value is a field's name reads back as it was saved", async () => {
@@ -134,7 +169,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#1213: what the stores keep"
     const failed = await queue.findByTenantIdAndExecutionId("default", "failed-1");
     expect(ok?.failure).toBeUndefined();
     expect(
-      await connection.client.hExists(keyOf(space.prefix, "child", "default", "ok-1"), "failure"),
+      await connection.native.hExists(keyOf(space.prefix, "child", "default", "ok-1"), "failure"),
     ).toBe(0);
     expect(failed?.failure).toBe("the tool failed");
   });
@@ -144,7 +179,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#1213: what the stores keep"
     async (stored) => {
       const queue = queueOn(connection);
       await queue.saveIfAbsent(child("corrupt-1"));
-      await connection.client.hSet(keyOf(space.prefix, "child", "default", "corrupt-1"), {
+      await connection.native.hSet(keyOf(space.prefix, "child", "default", "corrupt-1"), {
         queuedAt: stored,
       });
 
@@ -160,7 +195,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#1213: what the stores keep"
     // renewed for longer than the key's hour past its first end: the key's life grows with it
     expect(await limits.renew(lease, seconds(7200))).toBe(true);
 
-    const ttl = await connection.client.pTTL(keyOf(space.prefix, "rate-limit-slots", "provider-1"));
+    const ttl = await connection.native.pTTL(keyOf(space.prefix, "rate-limit-slots", "provider-1"));
     expect(ttl).toBeGreaterThan(7_200_000);
     expect(ttl).toBeLessThanOrEqual(7_200_000 + HOUR);
   });
@@ -171,7 +206,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#1213: what the stores keep"
 
     await limits.pauseUntil("provider-1", until);
 
-    const ttl = await connection.client.pTTL(keyOf(space.prefix, "rate-limit-pause", "provider-1"));
+    const ttl = await connection.native.pTTL(keyOf(space.prefix, "rate-limit-pause", "provider-1"));
     expect(ttl).toBeGreaterThan(3 * HOUR);
     expect(ttl).toBeLessThanOrEqual(4 * HOUR);
     expect(await limits.pausedUntil("provider-1")).toEqual(until);
@@ -192,7 +227,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#1213: what the stores keep"
     await limits.clearWindow("provider-1");
 
     expect(
-      await connection.client.exists([
+      await connection.native.exists([
         keyOf(space.prefix, "rate-limit-window", "provider-1"),
         keyOf(space.prefix, "rate-limit-window-amounts", "provider-1"),
       ]),

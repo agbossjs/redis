@@ -10,11 +10,11 @@ PostgreSQL or MongoDB (agbossjs/agboss#527, #693, #824).
 
 ## The stores
 
-| Contract                        | Store                                | How it maps to Redis                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ExecutionLeaseRepository`      | `RedisExecutionLeaseRepository`      | one hash per tree; every operation one Lua script; expiry by the server's `TIME` inside the script; epochs only grow                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `ChildExecutionQueueRepository` | `RedisChildExecutionQueueRepository` | a hash per child, one sorted set of the queued (deepest first, then longest waiting); save, claim, complete each one script; the depth (`countByStatus`) one script over the queued by time and the running, kept by the same scripts; the watch (`watchQueued`, agbossjs/agboss#777): the save script publishes on `<prefix>child-queued`, each instance subscribes on a connection of its own — a child another instance queued is claimed at once, not at the 30 s sweep; a dropped subscription reconnects (1 s doubling, at most 30 s), subscribes again and wakes once, the sweep the floor |
-| `RateLimitRepository`           | `RedisRateLimitRepository`           | slots a sorted set (slot → its end), windows a sorted set and a hash, pauses a string — each operation one script                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Contract                        | Store                                | How it maps to Redis                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ExecutionLeaseRepository`      | `RedisExecutionLeaseRepository`      | `ClusterExecutionLeaseRepository` over `RedisClusterCoordinator`: one hash per tree; every operation one Lua script; expiry by the server's `TIME`; the counter only grows; the **database's lease row is the authority** (D6, below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `ChildExecutionQueueRepository` | `RedisChildExecutionQueueRepository` | a hash per child, one sorted set of the queued (deepest first, then longest waiting) and one of the isolated workers' children (#1286b: the general claim never takes them; `OtherWorker` children skip the instance that queued them); save, claim, targeted claim, withdraw, complete each one script; the depth (`countByStatus`) one script over the queued by time and the running, kept by the same scripts; the watch (`watchQueued`, agbossjs/agboss#777): the save script publishes on `<prefix>child-queued`, each instance subscribes on a connection of its own — a child another instance queued is claimed at once, not at the 30 s sweep; a dropped subscription reconnects (1 s doubling, at most 30 s), subscribes again and wakes once, the sweep the floor |
+| `RateLimitRepository`           | `RedisRateLimitRepository`           | slots a sorted set (slot → its end), windows a sorted set and a hash, pauses a string — each operation one script                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 Why these and no other: the core's one-backend rule (#526) binds the fenced-effect and outbound-call
 stores to the lease store; rate limits, the queue and the audit log are on any backend. Of those,
@@ -51,6 +51,63 @@ fenced-effect or outbound-call store fails assembly with `[application.store-bac
   applications that make no fenced write or outbound call; their other stores (records, trees,
   pauses, checkpoints) on PostgreSQL or MongoDB.
 
+## The cluster lease: the database's row is the authority (D6)
+
+Under `@ClusterStorage` the lease store (`RedisExecutionLeaseRepository`, a core
+`ClusterExecutionLeaseRepository`) splits the work between two stores:
+
+- **Redis decides liveness** — who holds a tree's lease and until when — by the server's own `TIME`,
+  one Lua script per take, renewal, release, retire, yield and reclaim. The counter of a tree's
+  token only grows and a lease key is never deleted or given an expiry, also none on a paused
+  tree's release.
+- **The database's lease row** (the store under `EXECUTION_ID_STORE`) is the authority for the
+  token, the stop mark, the external pause and its fence; its fencing stores check that row in their
+  own transaction. So the row is written first and Redis acknowledges after:
+  - a take (`acquire`, `reclaim`) is mirrored into the row before it is handed out;
+  - a release or a retire is written to the row before the key changes;
+  - a mark (cancel, stop, pause, unpause) is written to the row, with its status-history row, and
+    pushed to Redis after: a cache key `<prefix>lease-marks:[tenant, root]` and a message on
+    `<prefix>lease-marks` that never lower what they hold (the cancel, the stop mode and the fence
+    only escalate; the pause is the one mark the database lifts, so a push of none clears it). Every
+    read of a mark is the row's, never Redis's: a Redis that is flushed loses no mark.
+- **A Redis behind the row** (a flush, a restore from an old snapshot, a failover to a stale
+  replica: its counter starts again) can never hand out a stale token: the row refuses it, the take
+  is given back, `RAISE_EPOCH` lifts the counter to at least the row's token — never lowering it —
+  and the take is asked again, three times; a Redis that stays behind fails the call closed with
+  `StoreError.ClusterLeaseBehind` (`store.cluster-lease-behind`), nothing handed out. Any failure to
+  mirror a lease into the row ends the call the same way.
+- A mark whose push to Redis fails rejects the call **after** the mark is durable; a repeat of the
+  command pushes again.
+
+The package passes the core's `executionLeaseClusterContract` (`tests/contracts/cluster-lease.test.ts`).
+
+## The driver
+
+```ts no-check: the application's storage components are not part of this package
+import { ClusterStorage, DatabaseStorage, env, secret } from "@agboss/core";
+import { PostgresDriver } from "@agboss/postgres";
+import { RedisDriver } from "@agboss/redis";
+import { sec } from "@agboss/core/units";
+
+@DatabaseStorage({ driver: PostgresDriver({ url: secret("POSTGRES_URL") }) })
+export class Database {}
+
+@ClusterStorage({
+  driver: RedisDriver({
+    url: secret("REDIS_URL"),
+    keyPrefix: "orders:",
+    timeouts: { watchLiveness: sec(10) }, // the child queue's watch; at least 2 s
+  }),
+})
+export class Cluster {}
+```
+
+`RedisDriver` is the cluster's driver: the connection and the three coordination stores, on the
+backend `redis`. The lease store's ids and marks go to the database driver's lease store (the
+container binds it under `EXECUTION_ID_STORE`). `timeouts` is `DriverTimeouts` in `Milliseconds`
+(`watchLiveness` only: Redis has no command or transaction timeout of its own). The environment's
+`redis…` fields stay for an application that names no storage component.
+
 ## Listing the stores, and the kept execution ids
 
 `REDIS_COORDINATION_STORES` is every store of this package — the leases, the child queue, the rate
@@ -60,14 +117,14 @@ MongoDB that leave the coordination and fencing stores out (`POSTGRES_DURABLE_ST
 `MONGODB_DURABLE_STORES`), and list no fenced-effect or outbound-call store.
 
 Every execution id is kept forever by the lease store (`claimExecutionId`, #591), and so is every
-tree's **cancel mark** (`requestCancel` / `isCancelRequested`, agbossjs/agboss#909, #1117, #1152): the
+tree's **marks** (cancel, stop, pause, `requestCancel` / `isCancelRequested`, agbossjs/agboss#909, #1117, #1152, #1341): the
 mark is permanent and lives on the tree's lease row of the durable store (PostgreSQL, MongoDB), where
-its fencing stores read it. Redis keeps neither: `RedisExecutionLeaseRepository` hands both to the
-store under `EXECUTION_ID_STORE` and writes nothing of them to Redis, so a Redis that is flushed,
-restarted from an old snapshot or failed over loses no cancel (a test empties a Redis and reads the
-mark back). The store under that token must be a durable lease store, not a stand-in that keeps ids
-only: the core's `ExecutionIdStore` carries `requestCancel` and `isCancelRequested`, so a store
-without them does not compile (agbossjs/agboss#1198). The application gives it its
+its fencing stores read it. Redis keeps neither as an authority: `RedisExecutionLeaseRepository`
+hands both to the store under `EXECUTION_ID_STORE` first (a cache of the marks follows in Redis, never
+read back), so a Redis that is flushed, restarted from an old snapshot or failed over loses no mark
+(a test empties a Redis and reads the marks back). The store under that token must be a durable lease store, not a stand-in that keeps ids
+only: the core's `ExecutionIdStore` carries the marks and the cluster mirror (`syncClusterLease`,
+`endClusterLease`, `mirroredLeaseOf`), so a store without them does not compile (agbossjs/agboss#1198). The application gives it its
 durable lease store by class — created by the container under that token only, so it is neither a
 second lease store (`[di.ambiguous-implementation]`) nor made with `new`:
 

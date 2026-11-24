@@ -45,7 +45,7 @@ async function crashAndRestart(): Promise<void> {
     try {
       await probe.onInit();
       // a read answers only once the dataset is loaded (LOADING before)
-      await probe.client.get("agboss-crash:probe");
+      await probe.native.get("agboss-crash:probe");
       return;
     } catch {
       // not up yet
@@ -122,7 +122,7 @@ describe.skipIf(CONTAINER === "" || DURABLE_URL === "")(
       const prefix = `agboss-crash:weak:${String(Date.now())}:`;
       const durable = await leasesOn(prefix);
       await takeAndRelease(durable.leases, 1);
-      await durable.connection.client.configSet("appendonly", "no");
+      await durable.connection.native.configSet("appendonly", "no");
       await durable.connection.onDestroy();
 
       const refused: unknown = await leasesOn(prefix).then(

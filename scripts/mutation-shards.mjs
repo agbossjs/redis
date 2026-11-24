@@ -22,7 +22,8 @@
  * tests, so every mutant ran every test of the shard.
  */
 export const SHARDS = {
-  // the lease: its claim, renewal, finish, yield and reclaim as one script each, the server's
+  // the lease (D6, #1321e: the cluster's side — one script per take, renewal, end, yield and reclaim,
+  // the counter raised past the database's row, the marks' cache that only escalates): its claim, renewal, finish, yield and reclaim as one script each, the server's
   // `TIME` as its clock, the cancel mark (agbossjs/agboss#1117, #1152), the scripts' `EVALSHA`
   // with `EVAL` once on `NOSCRIPT`, and the whitelist that reads a write's error after the send as
   // of unknown outcome (agbossjs/agboss#1017)
@@ -30,15 +31,16 @@ export const SHARDS = {
     timeoutMS: 120_000,
     mutate: [
       "src/stores/redis-execution-lease.repository.ts",
-      "src/stores/leases/lease-scripts.ts",
+      "src/stores/leases/*.ts",
       "src/stores/store-time.ts",
       "src/connection/scripts.ts",
       "src/connection/outcome.ts",
     ],
     tests: [
-      "tests/contracts/store-conformance.test.ts",
+      "tests/contracts/{store-conformance,cluster-lease}.test.ts",
       "tests/connection/{scripts,outcome,script-replies}.test.ts",
-      "tests/integration/{stores,stored-layout,lease-key-conflict,cancel-mark-durable,outcome}.integration.test.ts",
+      "tests/stores/cluster-coordinator.test.ts",
+      "tests/integration/{stores,stored-layout,lease-key-conflict,cancel-mark-durable,cluster-lease,outcome}.integration.test.ts",
     ],
   },
   // the child queue (its saves, claims and the watch that wakes a waiter: agbossjs/agboss#777,
@@ -56,7 +58,7 @@ export const SHARDS = {
     tests: [
       "tests/contracts/store-conformance.test.ts",
       "tests/connection/watch-liveness-settings.test.ts",
-      "tests/stores/*.test.ts",
+      "tests/stores/{queue-watch,queue-watch-liveness,child-queue-placement}.test.ts",
       "tests/integration/{stores,stored-layout,queue-watch,queue-watch-silent-death,outcome}.integration.test.ts",
     ],
   },
@@ -69,6 +71,8 @@ export const SHARDS = {
       "src/connection/durability.ts",
       "src/connection/deployment.ts",
       "src/connection/settings.ts",
+      "src/connection/driver-settings.ts",
+      "src/driver.ts",
       "src/connection/close-bounded.ts",
       "src/connection/heartbeat.ts",
       "src/connection/redis-connection.ts",
@@ -85,6 +89,8 @@ export const SHARDS = {
 export const NON_SHARDED_SRC = new Set([
   // the public surface: re-exports, no behaviour a mutant could change
   "src/index.ts",
+  // the interface of the client the package hands out: types only
+  "src/connection/redis-client.ts",
   // the error classes: a name, a message and the fields the start checks fill; every constructor
   // is read by the tests of the checks that throw it
   "src/errors.ts",

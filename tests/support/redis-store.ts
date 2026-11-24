@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
-  type ExecutionIdentity,
-  type ExecutionIdStore,
-  type ExecutionTree,
+  SqliteExecutionLeaseRepository,
+  StoreClock,
+  StoreTimeSource,
   type ExecutionLeaseRepository,
 } from "@agboss/core";
+import { SqliteConnection } from "@agboss/core/stores";
 import type { ContractTarget, StoreInstanceContext } from "@agboss/core/testing/contracts";
 import { RedisConnection, RedisExecutionLeaseRepository } from "../../src/index.js";
+import { TestApplicationContext } from "./application-context.js";
 import { DURABLE_URL } from "./server.js";
 
 /**
@@ -19,6 +24,7 @@ import { DURABLE_URL } from "./server.js";
 /** A key space of one test file: its prefix, its kept ids, and how to empty both. */
 export interface TestKeySpace {
   readonly prefix: string;
+  /** The file's durable lease store: new after every `reset`. */
   readonly keptIds: SharedKeptIds;
   /** The connections no store holds now, lent again to the next instance. */
   readonly idle: RedisConnection[];
@@ -27,43 +33,42 @@ export interface TestKeySpace {
 }
 
 /**
- * The kept execution ids of the tests: shared by every instance of the file, as the application's
- * durable lease store under `EXECUTION_ID_STORE` keeps them (#591, #891) — never in Redis (#527).
- * One insert-if-absent by the id.
+ * The application's durable lease store of the tests (`EXECUTION_ID_STORE`, #591, #891): the core's
+ * SQLite lease store on a file of its own, so every instance of the file's tests shares one set of
+ * rows — the execution ids, the cancel, stop and pause marks and their fence, the mirror of the
+ * cluster's leases (D6) — as PostgreSQL's would give, and never Redis (#527). The real store, so
+ * the order of the two writes is tested against the semantics of a database, not a double of them.
  */
-export class SharedKeptIds
-  implements ExecutionIdStore, Pick<ExecutionLeaseRepository, "requestCancel" | "isCancelRequested">
-{
-  readonly ids = new Map<string, string>();
-  /** The trees' cancel marks, on the durable store's lease rows (#1117), shared as the ids are. */
-  readonly cancels = new Set<string>();
+export class SharedKeptIds extends SqliteExecutionLeaseRepository {
+  readonly #folder: string;
 
-  requestCancel({ tenantId, rootExecutionId }: ExecutionTree): Promise<void> {
-    this.cancels.add(`${tenantId}\u0000${rootExecutionId}`);
-    return Promise.resolve();
+  constructor() {
+    const folder = mkdtempSync(join(tmpdir(), "agboss-redis-durable-"));
+    const application = new TestApplicationContext(
+      { sqlitePath: join(folder, "durable.sqlite") },
+      "durable",
+    );
+    super(new SqliteConnection(application), new StoreClock(StoreTimeSource.Test), application);
+    this.#folder = folder;
   }
 
-  isCancelRequested({ tenantId, rootExecutionId }: ExecutionTree): Promise<boolean> {
-    return Promise.resolve(this.cancels.has(`${tenantId}\u0000${rootExecutionId}`));
-  }
-
-  claimExecutionId({ executionId, tenantId }: ExecutionIdentity): Promise<boolean> {
-    if (this.ids.has(executionId)) return Promise.resolve(false);
-    this.ids.set(executionId, tenantId);
-    return Promise.resolve(true);
+  /** Closes the file and removes it. */
+  close(): void {
+    this.connection.onDestroy();
+    rmSync(this.#folder, { recursive: true, force: true });
   }
 }
 
 /** Every key under `prefix` removed (SCAN + UNLINK). */
 async function removeKeys(connection: RedisConnection, prefix: string): Promise<void> {
-  for await (const keys of connection.client.scanIterator({ MATCH: `${prefix}*`, COUNT: 500 }))
-    if (keys.length > 0) await connection.client.unlink(keys);
+  for await (const keys of connection.native.scanIterator({ MATCH: `${prefix}*`, COUNT: 500 }))
+    if (keys.length > 0) await connection.native.unlink(keys);
 }
 
 /** A key space of its own for one test file, on the durable test server. */
 export function testKeySpace(name: string): TestKeySpace {
   const prefix = `agboss-test:${name}:${randomUUID()}:`;
-  const keptIds = new SharedKeptIds();
+  let keptIds = new SharedKeptIds();
   let admin: RedisConnection | undefined;
   const adminOf = async (): Promise<RedisConnection> => {
     if (admin !== undefined) return admin;
@@ -74,14 +79,17 @@ export function testKeySpace(name: string): TestKeySpace {
   const idle: RedisConnection[] = [];
   return {
     prefix,
-    keptIds,
+    get keptIds() {
+      return keptIds;
+    },
     idle,
     reset: async () => {
-      keptIds.ids.clear();
-      keptIds.cancels.clear();
+      keptIds.close();
+      keptIds = new SharedKeptIds();
       await removeKeys(await adminOf(), prefix);
     },
     close: async () => {
+      keptIds.close();
       for (const connection of idle.splice(0)) await connection.onDestroy();
       if (admin === undefined) return;
       await removeKeys(admin, prefix);

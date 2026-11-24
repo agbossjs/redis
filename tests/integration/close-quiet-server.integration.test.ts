@@ -40,7 +40,7 @@ describe.skipIf(!HAS_DOCKER)("#923: onDestroy against a paused Redis", () => {
     await sleep(500);
 
     const outcome = await endsWithin(connection.onDestroy(), MARGIN_MS);
-    const stillOpen = connection.client.isOpen;
+    const stillOpen = connection.native.isOpen;
     await server.unpause();
     await sleep(1000);
     unhandled.stop();
@@ -56,7 +56,7 @@ describe.skipIf(!HAS_DOCKER)("#923: onDestroy against a paused Redis", () => {
     await connection.onInit();
     await server.pause();
     await sleep(500);
-    const inFlight = connection.client.get("fix-923-key");
+    const inFlight = connection.native.get("fix-923-key");
     const failed = inFlight.then(
       () => "answered",
       () => "rejected",

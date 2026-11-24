@@ -10,6 +10,7 @@ export class TestApplicationContext extends ApplicationContext {
   readonly instanceId: string;
   readonly startedAt = new Date("2026-01-05T09:00:00.000Z");
   readonly environmentName = "test";
+  readonly profiles: ApplicationContext["profiles"] = ["test"];
   readonly environment: ApplicationContext["environment"];
   readonly host: HostContext = {
     hostname: "test-host",

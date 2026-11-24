@@ -115,7 +115,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#777: the Redis child queue'
       arrived();
     });
     try {
-      await other.connection.client.clientKill({ filter: "ID", id });
+      await other.connection.native.clientKill({ filter: "ID", id });
       // right after the kill: node-redis reconnects at once (~5 ms), so this save is lost by pub/sub
       // or delivered after the new subscription — the wake-up on `ready` stands for it either way
       expect(await other.queue.saveIfAbsent(child("lost-1"))).toBe(true);
@@ -123,7 +123,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#777: the Redis child queue'
       expect(await queue.claimFirstByStatusQueuedOrderByDepthDesc()).toMatchObject({
         executionId: "lost-1",
       });
-      await other.connection.client.publish(`${space.prefix}fence`, "back");
+      await other.connection.native.publish(`${space.prefix}fence`, "back");
       await fenced;
       const before = wake.count;
       expect(before).toBeGreaterThanOrEqual(1);

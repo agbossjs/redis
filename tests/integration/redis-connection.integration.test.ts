@@ -38,7 +38,7 @@ describe.skipIf(DURABLE_URL === "")(
       await withConnection(new RedisConnection({ url: DURABLE_URL }), async (connection) => {
         await connection.onInit();
 
-        expect(connection.client.isReady).toBe(true);
+        expect(connection.native.isReady).toBe(true);
         expect(await connection.durability()).toEqual({ problems: [] });
         await expect(connection.ping()).resolves.toBeUndefined();
       });
@@ -65,7 +65,7 @@ describe.skipIf(DURABLE_URL === "")(
       await connection.onInit();
 
       await connection.onDestroy();
-      expect(connection.client.isOpen).toBe(false);
+      expect(connection.native.isOpen).toBe(false);
     });
   },
 );
@@ -93,7 +93,7 @@ describe.skipIf(WEAK_URL === "")(
         "appendonly is no",
         "appendfsync is everysec",
       ]);
-      expect(connection.client.isOpen).toBe(false);
+      expect(connection.native.isOpen).toBe(false);
     });
 
     it("the opt-out naming the lost guarantee starts it, and reports what is lost", async () => {
@@ -115,7 +115,7 @@ describe.skipIf(WEAK_URL === "")(
     it("AC4: durability() reports a short server without throwing; requireDurability() refuses it", async () => {
       const connection = new RedisConnection({ url: WEAK_URL });
       await withConnection(connection, async () => {
-        await connection.client.connect();
+        await connection.native.connect();
 
         const durability = await connection.durability();
         expect(durability.optOut).toBeUndefined();
@@ -165,6 +165,6 @@ describe.skipIf(REPLICA_URL === "")("agbossjs/agboss#693 AC4: a replica is refus
 
     if (!(failure instanceof RedisDeploymentError)) throw new Error("expected the named error");
     expect(failure.problems).toEqual([expect.stringMatching(/^the server's role is slave: /u)]);
-    expect(connection.client.isOpen).toBe(false);
+    expect(connection.native.isOpen).toBe(false);
   });
 });

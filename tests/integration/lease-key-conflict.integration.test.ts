@@ -18,7 +18,15 @@ const identity = { tenantId: "default", executionId: "execution-1" };
 
 describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#923: a lease key of another database", () => {
   const space = testKeySpace("lease-key-conflict");
+  const databases: SharedKeptIds[] = [];
+  /** A database of its own (its id store), closed with the file. */
+  const databaseOf = (): SharedKeptIds => {
+    const database = new SharedKeptIds();
+    databases.push(database);
+    return database;
+  };
   afterAll(async () => {
+    for (const database of databases) database.close();
     await space.close();
   });
 
@@ -37,13 +45,13 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#923: a lease key of another
 
   it("AC2: an id the id store hands out as new, whose lease key exists, fails — it is not taken for ever", async () => {
     await space.reset();
-    const old = await storeOf(new SharedKeptIds());
+    const old = await storeOf(databaseOf());
     expect(await old.claimExecutionId(identity)).toBe(true);
     const lease = await old.acquire(identity.tenantId, identity.executionId, LEASE);
     if (lease === undefined) throw new Error("a new tree is taken");
     await old.retire(lease);
 
-    const fresh = await storeOf(new SharedKeptIds());
+    const fresh = await storeOf(databaseOf());
 
     const refused = await fresh.claimExecutionId(identity).catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(RedisLeaseKeyConflictError);
@@ -54,7 +62,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#923: a lease key of another
 
   it("an id the id store already had is `false` as before, whatever its lease key", async () => {
     await space.reset();
-    const store = await storeOf(new SharedKeptIds());
+    const store = await storeOf(databaseOf());
     expect(await store.claimExecutionId(identity)).toBe(true);
     expect(await store.acquire(identity.tenantId, identity.executionId, LEASE)).toBeDefined();
 
@@ -63,7 +71,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#923: a lease key of another
 
   it("a new id with no lease key is claimed and taken as ever", async () => {
     await space.reset();
-    const store = await storeOf(new SharedKeptIds());
+    const store = await storeOf(databaseOf());
 
     expect(await store.claimExecutionId(identity)).toBe(true);
     expect((await store.acquire(identity.tenantId, identity.executionId, LEASE))?.token).toBe(1);

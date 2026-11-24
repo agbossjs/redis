@@ -105,7 +105,7 @@ describe.skipIf(DURABLE_URL === "")(
       const connection = await throughProxy();
       proxy.dropAfter(/EVALSHA/u);
 
-      const error = await runScript(connection.client, SET, [key("applied")], ["1"]).catch(
+      const error = await runScript(connection.native, SET, [key("applied")], ["1"]).catch(
         (caught: unknown) => caught,
       );
 
@@ -141,7 +141,7 @@ describe.skipIf(DURABLE_URL === "")(
     it("the link cut before the EVALSHA bytes reach the server: unknown all the same, and nothing applied", async () => {
       const connection = await throughProxy();
       proxy.freeze();
-      const call = runScript(connection.client, SET, [key("never-arrived")], ["1"]).catch(
+      const call = runScript(connection.native, SET, [key("never-arrived")], ["1"]).catch(
         (caught: unknown) => caught,
       );
       await written();
@@ -158,12 +158,12 @@ describe.skipIf(DURABLE_URL === "")(
       proxy.drop();
       await vi.waitFor(
         () => {
-          expect(connection.client.isReady).toBe(false);
+          expect(connection.native.isReady).toBe(false);
         },
         { timeout: 10_000 },
       );
 
-      const call = runScript(connection.client, SET, [key("queued")], ["1"]);
+      const call = runScript(connection.native, SET, [key("queued")], ["1"]);
       const settled = vi.fn();
       void call.then(settled, settled);
       await written();
@@ -179,7 +179,7 @@ describe.skipIf(DURABLE_URL === "")(
       const connection = await throughProxy();
       await connection.onDestroy();
 
-      const error = await runScript(connection.client, SET, [key("closed")], ["1"]).catch(
+      const error = await runScript(connection.native, SET, [key("closed")], ["1"]).catch(
         (caught: unknown) => caught,
       );
 
@@ -221,7 +221,7 @@ describe.skipIf(DURABLE_URL === "")(
       await direct.rPush(key("a-list"), "x");
 
       const error = await runScript(
-        connection.client,
+        connection.native,
         SET_THEN_WRONGTYPE,
         [key("before-the-error"), key("a-list")],
         ["1"],
@@ -263,7 +263,7 @@ describe.skipIf(DURABLE_URL === "")(
       await direct.scriptLoad(read.source);
       proxy.dropAfter(/EVALSHA/u);
 
-      const error = await runScript(connection.client, read, [key("a-read")], []).catch(
+      const error = await runScript(connection.native, read, [key("a-read")], []).catch(
         (caught: unknown) => caught,
       );
 

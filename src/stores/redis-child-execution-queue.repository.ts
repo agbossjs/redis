@@ -1,6 +1,7 @@
 import {
   ApplicationContext,
   ChildExecutionQueueRepository,
+  ChildPlacement,
   Clock,
   ExecutionRecordStatus,
   Injectable,
@@ -10,72 +11,29 @@ import {
   type ChildExecutionQueueWatch,
   type QueuedChildExecution,
 } from "@agboss/core";
-import { z } from "zod";
 import { RedisConnection } from "../connection/redis-connection.js";
-import { keyOf, runScript } from "../connection/scripts.js";
+import { runScript } from "../connection/scripts.js";
 import {
   CLAIM,
+  CLAIM_ISOLATED,
   COMPLETE,
   DELETE_TREE,
   DEPTH,
-  QUEUED_AT_DIGITS,
+  QUEUED_ISOLATED,
   SAVE,
+  WITHDRAW,
 } from "./queue/queue-scripts.js";
+import {
+  childOf,
+  DepthReply,
+  fieldsOf,
+  queueKeysOf,
+  queuedAtOf,
+  queuedAtText,
+  rowsOf,
+  type QueueKeys,
+} from "./queue/queue-rows.js";
 import { LivenessWatch } from "./queue/queue-watch-liveness.js";
-
-/** A time as the row keeps it: ms as text. */
-const Time = z
-  .string()
-  .regex(/^-?\d+$/u)
-  .transform((text) => new Date(Number(text)));
-
-const Row = z.object({
-  tenantId: z.string(),
-  executionId: z.string(),
-  rootExecutionId: z.string(),
-  parentExecutionId: z.string(),
-  rootWorkflow: z.string(),
-  workflow: z.string(),
-  depth: z.string().transform(Number).pipe(z.number().int()),
-  status: z.enum(ExecutionRecordStatus),
-  run: z.string(),
-  queuedAt: Time,
-  instanceId: z.string().optional(),
-  claimedAt: Time.optional(),
-  endedAt: Time.optional(),
-  failure: z.string().optional(),
-});
-
-/** A row as the contract gives it back. */
-const childOf = (fields: Readonly<Record<string, string | undefined>>): QueuedChildExecution => {
-  const row = Row.parse(fields);
-  return {
-    ...row,
-    instanceId: row.instanceId,
-    claimedAt: row.claimedAt,
-    endedAt: row.endedAt,
-    failure: row.failure,
-  };
-};
-
-/** A flat `HGETALL` reply (name, value, …) as fields: each name at an even place, its value after it. */
-const fieldsOf = (reply: unknown): Record<string, string | undefined> => {
-  const flat = z.array(z.string()).parse(reply);
-  return Object.fromEntries(
-    flat.flatMap((name, at) => (at % 2 === 0 ? [[name, flat[at + 1]]] : [])),
-  );
-};
-
-/** The queue member's time part: `queuedAt` shifted to be positive, 17 digits — sorts by time. */
-const queuedAtText = (queuedAt: Date): string =>
-  String(queuedAt.getTime() + 8.64e15).padStart(QUEUED_AT_DIGITS, "0");
-
-/** A queue member's `queuedAt`: its time part shifted back. */
-const queuedAtOf = (member: string): Date =>
-  new Date(Number(member.slice(0, QUEUED_AT_DIGITS)) - 8.64e15);
-
-/** The depth script's reply: the queued count, the running count, the oldest queued member or nil. */
-const DepthReply = z.tuple([z.number().int(), z.number().int(), z.string().nullable()]);
 
 /**
  * `ChildExecutionQueueRepository` on Redis (agbossjs/agboss#693): a child is one hash, the queued
@@ -83,8 +41,7 @@ const DepthReply = z.tuple([z.number().int(), z.number().int(), z.string().nulla
  * Every operation that decides is one Lua script (`queue/queue-scripts.ts`): a save or a requeue
  * compares the stored status (and claim) and writes, a claim takes the first member off the queue
  * and marks its row running — so of two instances exactly one claims a child — and a completion
- * matches this instance's running row. Times are the framework `Clock`'s. On any backend beside
- * the leases (#526). The depth (agbossjs/agboss#485) is one script over two more keys the others
+ * matches this instance's running row. Times are the framework `Clock`'s. The depth (agbossjs/agboss#485) is one script over two more keys the others
  * keep: the queued members by time alone and the running rows. The watch (agbossjs/agboss#777) is a
  * subscription to the channel every save publishes on, one connection of its own per watch.
  */
@@ -97,7 +54,10 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     private readonly logger: Logger,
   ) {
     super();
+    this.#keys = queueKeysOf(connection.keyPrefix);
   }
+
+  readonly #keys: QueueKeys;
 
   ping(): Promise<void> {
     return this.connection.ping();
@@ -111,19 +71,25 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
       ...{ rootWorkflow: child.rootWorkflow, workflow: child.workflow },
       ...{ depth: String(child.depth), status: ExecutionRecordStatus.Queued, run: child.run },
       queuedAt: String(child.queuedAt.getTime()),
+      ...(child.placement === undefined ? {} : { placement: child.placement }),
+      ...(child.excludeInstanceId === undefined
+        ? {}
+        : { excludeInstanceId: child.excludeInstanceId }),
     };
+    const isIsolated = child.placement === ChildPlacement.IsolatedWorker;
     const saved = await runScript(
       this.connection.client,
       SAVE,
       [
-        ...[this.#rowKey(child.tenantId, child.executionId), this.#queueKey()],
-        ...[this.#treeKey(child), this.#queuedByTimeKey(), this.#runningKey()],
+        ...[this.#keys.row(child.tenantId, child.executionId), this.#keys.queue(isIsolated)],
+        ...[this.#keys.tree(child), this.#keys.byTime, this.#keys.running],
+        this.#keys.queue(!isIsolated),
       ],
       [
         ...[id, `${queuedAtText(child.queuedAt)}${id}`, String(-child.depth)],
         // Stryker disable next-line StringLiteral: a stored claim is a number; any other text is none
         child.claimedAt === undefined ? "" : String(child.claimedAt.getTime()),
-        this.#queuedChannel(),
+        this.#keys.channel,
         ...Object.entries(fields).flat(),
       ],
     );
@@ -134,7 +100,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     tenantId: string,
     executionId: string,
   ): Promise<QueuedChildExecution | undefined> {
-    const fields = await this.connection.client.hGetAll(this.#rowKey(tenantId, executionId));
+    const fields = await this.connection.client.hGetAll(this.#keys.row(tenantId, executionId));
     return Object.keys(fields).length === 0 ? undefined : childOf(fields);
   }
 
@@ -142,14 +108,58 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     const reply = await runScript(
       this.connection.client,
       CLAIM,
-      [this.#queueKey(), this.#queuedByTimeKey(), this.#runningKey()],
+      [this.#keys.queue(false), this.#keys.byTime, this.#keys.running],
       [
-        `${this.connection.keyPrefix}child:`,
+        this.#keys.rowPrefix,
         this.applicationContext.instanceId,
         String(this.clock.now().getTime()),
       ],
     );
     return reply === null ? undefined : childOf(fieldsOf(reply));
+  }
+
+  async findQueuedIsolatedWorkerChildren(limit: number): Promise<readonly QueuedChildExecution[]> {
+    const reply = await runScript(
+      this.connection.client,
+      QUEUED_ISOLATED,
+      [this.#keys.queue(true)],
+      [this.#keys.rowPrefix, String(Math.max(0, Math.floor(limit)))],
+    );
+    return rowsOf(reply);
+  }
+
+  async claimIsolatedWorkerByTenantIdAndExecutionId(
+    tenantId: string,
+    executionId: string,
+  ): Promise<QueuedChildExecution | undefined> {
+    const reply = await runScript(
+      this.connection.client,
+      CLAIM_ISOLATED,
+      [
+        ...[this.#keys.row(tenantId, executionId), this.#keys.queue(true)],
+        ...[this.#keys.byTime, this.#keys.running],
+      ],
+      [this.applicationContext.instanceId, String(this.clock.now().getTime())],
+    );
+    return reply === null ? undefined : childOf(fieldsOf(reply));
+  }
+
+  async withdrawByTenantIdAndExecutionIdIfQueued(
+    tenantId: string,
+    executionId: string,
+  ): Promise<boolean> {
+    const stored = await this.findByTenantIdAndExecutionId(tenantId, executionId);
+    if (stored === undefined) return false;
+    const withdrawn = await runScript(
+      this.connection.client,
+      WITHDRAW,
+      [
+        ...[this.#keys.row(tenantId, executionId), this.#keys.queue(false), this.#keys.queue(true)],
+        ...[this.#keys.byTime, this.#keys.tree(stored)],
+      ],
+      [JSON.stringify([tenantId, executionId])],
+    );
+    return withdrawn === 1;
   }
 
   async completeByTenantIdAndExecutionId(
@@ -160,7 +170,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     const completed = await runScript(
       this.connection.client,
       COMPLETE,
-      [this.#rowKey(tenantId, executionId), this.#runningKey()],
+      [this.#keys.row(tenantId, executionId), this.#keys.running],
       [
         ...[this.applicationContext.instanceId, end.status],
         ...[String(this.clock.now().getTime()), end.failure ?? ""],
@@ -177,10 +187,10 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
       this.connection.client,
       DELETE_TREE,
       [
-        ...[this.#treeKey({ tenantId, rootExecutionId }), this.#queueKey()],
-        ...[this.#queuedByTimeKey(), this.#runningKey()],
+        ...[this.#keys.tree({ tenantId, rootExecutionId }), this.#keys.queue(false)],
+        ...[this.#keys.byTime, this.#keys.running, this.#keys.queue(true)],
       ],
-      [`${this.connection.keyPrefix}child:`],
+      [this.#keys.rowPrefix],
     );
   }
 
@@ -188,7 +198,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     const reply = await runScript(
       this.connection.client,
       DEPTH,
-      [this.#queueKey(), this.#queuedByTimeKey(), this.#runningKey()],
+      [this.#keys.byTime, this.#keys.running],
       // Stryker disable next-line ArrayDeclaration: the depth script reads no ARGV
       [],
     );
@@ -205,8 +215,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
    * prefix (agbossjs/agboss#777): a subscription on a connection of its own to the channel the save
    * script publishes on. Idle on an empty queue: the server pushes, nothing is polled. A dropped
    * connection reconnects (at once, ~5 ms; while the server stays down 2 s, doubling, at most 30 s
-   * apart), subscribes again and wakes
-   * `onQueued` once when back — a message sent while it was down is lost (pub/sub keeps nothing),
+   * apart), subscribes again and wakes `onQueued` once when back — a message sent while it was down is lost (pub/sub keeps nothing),
    * so that wake-up stands for it, and the core's sweep stays the floor. A connection that dies
    * silently is noticed within `redisWatchLivenessSeconds` (agbossjs/agboss#789): a warning
    * (`child-queue.watch-connection-lost`), a new subscription and one wake-up. Rejects when the
@@ -215,35 +224,11 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
   override watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch> {
     return LivenessWatch.open({
       subscriber: () => this.connection.subscriber(),
-      channel: this.#queuedChannel(),
+      channel: this.#keys.channel,
       onQueued,
       clock: this.clock,
       livenessSeconds: this.connection.watchLivenessSeconds,
       logger: this.logger,
     });
-  }
-
-  #queuedChannel(): string {
-    return `${this.connection.keyPrefix}child-queued`;
-  }
-
-  #rowKey(tenantId: string, executionId: string): string {
-    return keyOf(this.connection.keyPrefix, "child", tenantId, executionId);
-  }
-
-  #queueKey(): string {
-    return `${this.connection.keyPrefix}children-queued`;
-  }
-
-  #queuedByTimeKey(): string {
-    return `${this.connection.keyPrefix}children-queued-by-time`;
-  }
-
-  #runningKey(): string {
-    return `${this.connection.keyPrefix}children-running`;
-  }
-
-  #treeKey(tree: Pick<QueuedChildExecution, "tenantId" | "rootExecutionId">): string {
-    return keyOf(this.connection.keyPrefix, "children-of", tree.tenantId, tree.rootExecutionId);
   }
 }

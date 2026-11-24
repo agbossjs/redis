@@ -10,15 +10,15 @@ import {
   clientOf,
   subscriberReconnectDelayOf,
   subscriberReconnectStrategyOf,
-  type RedisClient,
 } from "../../src/connection/redis-connection.js";
+import type { NodeRedisClient } from "../../src/connection/redis-client.js";
 import { RedisConnectionClosedError } from "../../src/errors.js";
 
 const URL = "redis://127.0.0.1:1";
 const CAUSE = new Error("ECONNREFUSED");
 
 /** The strategy node-redis was given for `client`. */
-function strategyOf(client: RedisClient): (retries: number, cause: Error) => unknown {
+function strategyOf(client: NodeRedisClient): (retries: number, cause: Error) => unknown {
   const strategy = client.options.socket?.reconnectStrategy;
   if (typeof strategy !== "function") throw new Error("the client has no reconnect strategy");
   return strategy;

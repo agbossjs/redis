@@ -1,9 +1,8 @@
-import type { DatabaseSync } from "node:sqlite";
 import {
   env,
+  Injectable,
   secret,
   SqliteCheckpointSaver,
-  SqliteConnection,
   SqliteCostLedgerRepository,
   SqliteExecutionHistoryRepository,
   SqliteExecutionAuditLogRepository,
@@ -15,6 +14,7 @@ import {
   SqlitePausedExecutionRepository,
   type Secret,
 } from "@agboss/core";
+import { SqliteConnection } from "@agboss/core/stores";
 import { FaultStoreTime, type FaultStoreSet } from "@agboss/core/testing/faults";
 import {
   RedisChildExecutionQueueRepository,
@@ -44,12 +44,27 @@ export class RedisFaultEnvironment {
   redisKeyPrefix?: string;
 }
 
-export const faultStores: FaultStoreSet<DatabaseSync> = {
+/**
+ * The pod's SQLite connection, kept for the fixture's charge: it writes its business row in the
+ * fenced effect's ambient transaction (#1317c), which `SqliteConnection.requireTransaction()`
+ * gives. Listed beside the stores, so the container makes it with them.
+ */
+let businessConnection: SqliteConnection | undefined;
+
+@Injectable({ deps: [SqliteConnection] })
+export class FaultBusinessConnection {
+  constructor(connection: SqliteConnection) {
+    businessConnection = connection;
+  }
+}
+
+export const faultStores: FaultStoreSet = {
   // agbossjs/agboss#799: the fencing stores the history records are SQLite's, on the pods' clock —
   // read at the suite's timeScale (the Redis queue and rate limits are not in the checked model)
   storeTime: FaultStoreTime.Host,
   providers: [
     SqliteConnection,
+    FaultBusinessConnection,
     SqliteCheckpointSaver,
     SqliteCostLedgerRepository,
     SqliteExecutionHistoryRepository,
@@ -73,9 +88,13 @@ export const faultStores: FaultStoreSet<DatabaseSync> = {
     },
   },
   businessRows: {
-    insert: (database, row) => {
-      database.exec(BUSINESS_ROWS);
-      database.prepare("INSERT INTO fault_business_rows (row) VALUES (?)").run(row);
+    // the effect's ambient transaction (#1317c)
+    insert: (row) => {
+      if (businessConnection === undefined)
+        throw new Error("the fault set's business connection was not made");
+      const transaction = businessConnection.requireTransaction();
+      transaction.exec(BUSINESS_ROWS);
+      transaction.prepare("INSERT INTO fault_business_rows (row) VALUES (?)").run(row);
     },
     committed: (app) => {
       const { database } = app.resolve(SqliteConnection);

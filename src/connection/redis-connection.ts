@@ -6,7 +6,9 @@ import {
   type OnDestroy,
   type OnInit,
 } from "@agboss/core";
+import { CLUSTER_SETTINGS, type ResolvedSettings } from "@agboss/core/stores";
 import { createClient } from "@redis/client";
+import type { NodeRedisClient, RedisClient } from "./redis-client.js";
 import { closeBounded, destroyed } from "./close-bounded.js";
 import { RedisConnectionClosedError, RedisSettingsError } from "../errors.js";
 import {
@@ -17,6 +19,7 @@ import {
   type RedisDurabilityOptOut,
 } from "./durability.js";
 import { requireOnePrimary, topologyOfServer, type RedisTopology } from "./deployment.js";
+import { settingsOfResolved } from "./driver-settings.js";
 import {
   checkedWatchLivenessOf,
   DEFAULT_KEY_PREFIX,
@@ -24,9 +27,6 @@ import {
   settingsOfEnvironment,
   type RedisConnectionSettings,
 } from "./settings.js";
-
-/** The client of one application instance (node-redis, RESP2 replies). */
-export type RedisClient = ReturnType<typeof createClient>;
 
 /** How many times the first connection is retried before `onInit` fails (about 1.5 s in all). */
 export const START_CONNECT_RETRIES = 5;
@@ -84,9 +84,9 @@ type ReconnectStrategy = (retries: number, cause: Error) => number | Error;
 export function clientOf(
   url: string,
   strategyOf: (wasReady: () => boolean) => ReconnectStrategy = reconnectStrategyOf,
-): RedisClient {
+): NodeRedisClient {
   let wasReady = false;
-  let client: RedisClient;
+  let client: NodeRedisClient;
   try {
     client = createClient({
       url,
@@ -109,6 +109,19 @@ export function clientOf(
 }
 
 /**
+ * The settings of a connection: the driver's resolved settings when the application names a
+ * `@ClusterStorage` of `RedisDriver` (agbossjs/agboss#1321), else the environment's fields (until
+ * they are removed), else the settings object a script or a test gave.
+ */
+function settingsOf(
+  source: ApplicationContext | RedisConnectionSettings,
+  resolved: ResolvedSettings | undefined,
+): RedisConnectionSettings {
+  if (resolved?.kind === "redis") return settingsOfResolved(resolved);
+  return source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
+}
+
+/**
  * The Redis server of one application instance: one node-redis client on the environment's
  * `redisUrl`, shared by every Redis store the application lists. At `onInit` it connects and
  * checks the server keeps an acknowledged write across a crash (`appendonly yes`,
@@ -119,7 +132,7 @@ export function clientOf(
  * the child queue); fenced effects and outbound calls stay on a durable store (agbossjs/agboss#526).
  */
 @Injectable({
-  deps: [ApplicationContext, Clock],
+  deps: [ApplicationContext, Clock, CLUSTER_SETTINGS],
   // checked at the application's assembly (agbossjs/agboss#511): a contract without redisUrl
   // fails with [environment.missing-field] before anything starts
   environmentFields: {
@@ -130,8 +143,15 @@ export function clientOf(
   },
 })
 export class RedisConnection implements OnInit, OnDestroy {
-  /** The instance's client: every store's commands and scripts. */
+  /** The instance's client, as the package's interface: every store's commands and scripts. */
   readonly client: RedisClient;
+  /**
+   * The node-redis client behind `client`: the package's own checks and its tests use it for the
+   * commands the interface leaves out (`CONFIG`, `INFO`, `SCAN`, `FLUSHDB`, …).
+   *
+   * @internal
+   */
+  readonly native: NodeRedisClient;
   /** What every key of the stores starts with (`redisKeyPrefix`, default `agboss:`). */
   readonly keyPrefix: string;
   /**
@@ -150,7 +170,7 @@ export class RedisConnection implements OnInit, OnDestroy {
   readonly #optOut: RedisDurabilityOptOut | undefined;
   readonly #url: string;
   /** The subscribers handed out and not ended yet: a stop that gave their owner up destroys them. */
-  readonly #subscribers = new Set<RedisClient>();
+  readonly #subscribers = new Set<NodeRedisClient>();
   /** Aborted when `onDestroy` starts: no subscriber is handed out any more (#954). */
   readonly #closed = new AbortController();
 
@@ -158,16 +178,20 @@ export class RedisConnection implements OnInit, OnDestroy {
    * @param clock bounds the close at the stop (agbossjs/agboss#923); a connection built without
    *   one closes in order only.
    */
-  constructor(source: ApplicationContext | RedisConnectionSettings, clock?: Clock) {
+  constructor(
+    source: ApplicationContext | RedisConnectionSettings,
+    clock?: Clock,
+    resolved?: ResolvedSettings,
+  ) {
     this.clock = clock;
-    const settings =
-      source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
+    const settings = settingsOf(source, resolved);
     this.#optOut = settings.durabilityOptOut;
     this.keyPrefix = settings.keyPrefix ?? DEFAULT_KEY_PREFIX;
     this.#url = settings.url;
     this.watchLivenessSeconds =
       checkedWatchLivenessOf(settings.watchLivenessSeconds) ?? DEFAULT_WATCH_LIVENESS_SECONDS;
-    this.client = clientOf(settings.url);
+    this.native = clientOf(settings.url);
+    this.client = this.native;
   }
 
   /**
@@ -181,7 +205,7 @@ export class RedisConnection implements OnInit, OnDestroy {
    *
    * @internal
    */
-  subscriber(): RedisClient {
+  subscriber(): NodeRedisClient {
     if (this.#closed.signal.aborted) throw new RedisConnectionClosedError();
     const client = clientOf(this.#url, subscriberReconnectStrategyOf);
     // the watch's owner closes it; one the stop gave up on is destroyed with the connection (#954)
@@ -197,7 +221,7 @@ export class RedisConnection implements OnInit, OnDestroy {
    */
   async durability(): Promise<RedisDurability> {
     const problems = await durabilityProblemsOfServer((parameter) =>
-      this.client.configGet(parameter),
+      this.native.configGet(parameter),
     );
     return durabilityOf(problems, this.#optOut);
   }
@@ -218,7 +242,7 @@ export class RedisConnection implements OnInit, OnDestroy {
    * (agbossjs/agboss#891: `requireSupportedTopology()` does).
    */
   topology(): Promise<RedisTopology> {
-    return topologyOfServer((section) => this.client.info(section));
+    return topologyOfServer((section) => this.native.info(section));
   }
 
   /**
@@ -241,7 +265,7 @@ export class RedisConnection implements OnInit, OnDestroy {
    * acknowledged write, is refused.
    */
   async onInit(): Promise<void> {
-    await this.client.connect();
+    await this.native.connect();
     try {
       await this.requireSupportedTopology();
       await this.requireDurability();
@@ -259,6 +283,6 @@ export class RedisConnection implements OnInit, OnDestroy {
   async onDestroy(): Promise<void> {
     this.#closed.abort();
     for (const subscriber of [...this.#subscribers]) destroyed(subscriber);
-    await closeBounded(this.client, this.clock);
+    await closeBounded(this.native, this.clock);
   }
 }

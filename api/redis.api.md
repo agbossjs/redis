@@ -11,12 +11,11 @@ import { ChildExecutionQueueCounts } from '@agboss/core';
 import { ChildExecutionQueueRepository } from '@agboss/core';
 import { ChildExecutionQueueWatch } from '@agboss/core';
 import { Clock } from '@agboss/core';
-import { createClient } from '@redis/client';
+import { ClusterDriver } from '@agboss/core/stores';
+import { ClusterExecutionLeaseRepository } from '@agboss/core/stores';
+import { DriverTimeouts } from '@agboss/core/stores';
 import { ExecutionIdentity } from '@agboss/core';
 import { ExecutionIdStore } from '@agboss/core';
-import { ExecutionLease } from '@agboss/core';
-import { ExecutionLeaseRepository } from '@agboss/core';
-import { ExecutionTree } from '@agboss/core';
 import { Logger } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
 import { OnDestroy } from '@agboss/core';
@@ -24,6 +23,8 @@ import { OnInit } from '@agboss/core';
 import { QueuedChildExecution } from '@agboss/core';
 import { RateLimitLease } from '@agboss/core';
 import { RateLimitRepository } from '@agboss/core';
+import { ResolvedSettings } from '@agboss/core/stores';
+import type { SecretRef } from '@agboss/core';
 import { StoreClock } from '@agboss/core';
 import { StoreDescriptor } from '@agboss/core';
 
@@ -42,6 +43,8 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     // (undocumented)
     claimFirstByStatusQueuedOrderByDepthDesc(): Promise<QueuedChildExecution | undefined>;
     // (undocumented)
+    claimIsolatedWorkerByTenantIdAndExecutionId(tenantId: string, executionId: string): Promise<QueuedChildExecution | undefined>;
+    // (undocumented)
     completeByTenantIdAndExecutionId(tenantId: string, executionId: string, end: ChildExecutionEnd): Promise<boolean>;
     // (undocumented)
     countByStatus(): Promise<ChildExecutionQueueCounts>;
@@ -50,18 +53,37 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     // (undocumented)
     findByTenantIdAndExecutionId(tenantId: string, executionId: string): Promise<QueuedChildExecution | undefined>;
     // (undocumented)
+    findQueuedIsolatedWorkerChildren(limit: number): Promise<readonly QueuedChildExecution[]>;
+    // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
     saveIfAbsent(child: QueuedChildExecution): Promise<boolean>;
     watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch>;
+    // (undocumented)
+    withdrawByTenantIdAndExecutionIdIfQueued(tenantId: string, executionId: string): Promise<boolean>;
 }
 
 // @public
-export type RedisClient = ReturnType<typeof createClient>;
+export interface RedisClient {
+    del(keys: string[]): Promise<number>;
+    eval(source: string, options: {
+        keys: string[];
+        arguments: string[];
+    }): Promise<unknown>;
+    evalSha(sha: string, options: {
+        keys: string[];
+        arguments: string[];
+    }): Promise<unknown>;
+    exists(key: string): Promise<number>;
+    get(key: string): Promise<string | null>;
+    hGetAll(key: string): Promise<Record<string, string>>;
+    ping(): Promise<string>;
+    zRem(key: string, member: string): Promise<number>;
+}
 
 // @public
 export class RedisConnection implements OnInit, OnDestroy {
-    constructor(source: ApplicationContext | RedisConnectionSettings, clock?: Clock);
+    constructor(source: ApplicationContext | RedisConnectionSettings, clock?: Clock, resolved?: ResolvedSettings);
     readonly client: RedisClient;
     durability(): Promise<RedisDurability>;
     readonly keyPrefix: string;
@@ -94,6 +116,20 @@ export class RedisDeploymentError extends AGBossError {
 }
 
 // @public
+export function RedisDriver(options: RedisDriverOptions): ClusterDriver;
+
+// @public
+export interface RedisDriverOptions {
+    readonly durabilityOptOut?: RedisDurabilityOptOut;
+    readonly keyPrefix?: string;
+    readonly timeouts?: RedisDriverTimeouts;
+    readonly url: SecretRef;
+}
+
+// @public
+export type RedisDriverTimeouts = Pick<DriverTimeouts, "watchLiveness">;
+
+// @public
 export interface RedisDurability {
     readonly optOut?: RedisDurabilityOptOut;
     readonly problems: readonly string[];
@@ -117,26 +153,10 @@ export enum RedisDurabilityOptOut {
 }
 
 // @public
-export class RedisExecutionLeaseRepository extends ExecutionLeaseRepository {
+export class RedisExecutionLeaseRepository extends ClusterExecutionLeaseRepository {
     constructor(connection: RedisConnection, clock: StoreClock, applicationContext: ApplicationContext, executionIds: ExecutionIdStore);
-    // (undocumented)
-    acquire(tenantId: string, rootExecutionId: string, duration: Milliseconds): Promise<ExecutionLease | undefined>;
     claimExecutionId(identity: ExecutionIdentity): Promise<boolean>;
-    isCancelRequested(tree: ExecutionTree): Promise<boolean>;
-    // (undocumented)
-    ping(): Promise<void>;
-    // (undocumented)
-    reclaim(held: ExecutionLease, duration: Milliseconds): Promise<ExecutionLease | undefined>;
-    // (undocumented)
-    release(held: ExecutionLease): Promise<void>;
-    // (undocumented)
-    renew(held: ExecutionLease, duration: Milliseconds): Promise<Milliseconds | undefined>;
-    requestCancel(tree: ExecutionTree): Promise<void>;
-    // (undocumented)
-    retire(held: ExecutionLease): Promise<void>;
     static readonly store: StoreDescriptor;
-    // (undocumented)
-    yield(held: ExecutionLease): Promise<Milliseconds | undefined>;
 }
 
 // @public
@@ -244,16 +264,12 @@ export interface RedisTopology {
 // src/stores/redis-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/redis-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
 // src/stores/redis-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
+// src/stores/redis-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "findQueuedIsolatedWorkerChildren".
+// src/stores/redis-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "claimIsolatedWorkerByTenantIdAndExecutionId".
+// src/stores/redis-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "withdrawByTenantIdAndExecutionIdIfQueued".
 // src/stores/redis-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
 // src/stores/redis-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
 // src/stores/redis-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "countByStatus".
-// src/stores/redis-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "ping".
-// src/stores/redis-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "acquire".
-// src/stores/redis-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "renew".
-// src/stores/redis-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "release".
-// src/stores/redis-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "retire".
-// src/stores/redis-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "yield".
-// src/stores/redis-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "reclaim".
 // src/stores/redis-rate-limit.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/redis-rate-limit.repository.ts - (ae-undocumented) Missing documentation for "acquire".
 // src/stores/redis-rate-limit.repository.ts - (ae-undocumented) Missing documentation for "renew".

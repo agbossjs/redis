@@ -8,7 +8,9 @@
  * refuses a fenced-effect or outbound-call store of another backend beside these leases. List them
  * with `...REDIS_COORDINATION_STORES`.
  */
-export { RedisConnection, type RedisClient } from "./connection/redis-connection.js";
+export { RedisConnection } from "./connection/redis-connection.js";
+export type { RedisClient } from "./connection/redis-client.js";
+export { RedisDriver, type RedisDriverOptions, type RedisDriverTimeouts } from "./driver.js";
 export {
   DEFAULT_KEY_PREFIX,
   DEFAULT_WATCH_LIVENESS_SECONDS,

@@ -61,7 +61,7 @@ describe.skipIf(DURABLE_URL === "")(
     const serverMs = async (
       connection: Awaited<ReturnType<typeof connectionOf>>,
     ): Promise<number> => {
-      const [unixSeconds, microseconds] = await connection.client.time();
+      const [unixSeconds, microseconds] = await connection.native.time();
       return Number(unixSeconds) * 1000 + Math.floor(Number(microseconds) / 1000);
     };
 
@@ -85,18 +85,18 @@ describe.skipIf(DURABLE_URL === "")(
       if (first === undefined) throw new Error("a free tree is taken");
       await leases.release(first);
       // the stored state is the documented one (lease-scripts.ts): `r` released, `f` retired
-      const released = await connection.client.hGet(key, "s");
+      const released = await connection.native.hGet(key, "s");
       const second = await leases.acquire("default", "epochs-1", LEASE);
       if (second === undefined) throw new Error("a released tree is taken again");
       await leases.retire(second);
 
       expect(released).toBe("r");
-      expect(await connection.client.hGet(key, "s")).toBe("f");
+      expect(await connection.native.hGet(key, "s")).toBe("f");
 
-      expect(await connection.client.pTTL(key)).toBe(-1);
+      expect(await connection.native.pTTL(key)).toBe(-1);
       expect(second.token).toBe(2);
       expect(await leases.acquire("default", "epochs-1", LEASE)).toBeUndefined();
-      expect(await connection.client.hGet(key, "e")).toBe("2");
+      expect(await connection.native.hGet(key, "e")).toBe("2");
     });
 
     it("ping() is the server's answer: on a closed connection it rejects", async () => {
@@ -115,7 +115,7 @@ describe.skipIf(DURABLE_URL === "")(
 
     it("a script dropped from the server's cache runs again from its source, once", async () => {
       const { connection, leases } = await leasesOf();
-      await connection.client.scriptFlush();
+      await connection.native.scriptFlush();
       const lease = await leases.acquire("default", "flushed-1", LEASE);
 
       expect(lease?.token).toBe(1);
@@ -140,7 +140,7 @@ describe.skipIf(DURABLE_URL === "")(
       await limits.pauseUntil("provider-1", new Date(Date.now() + 5_000));
 
       for (const kind of ["slots", "window", "window-amounts", "pause"]) {
-        const ttl = await connection.client.pTTL(
+        const ttl = await connection.native.pTTL(
           keyOf(space.prefix, `rate-limit-${kind}`, "provider-1"),
         );
         expect(ttl).toBeGreaterThan(0);

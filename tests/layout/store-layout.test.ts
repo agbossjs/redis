@@ -13,12 +13,12 @@ import {
   createApp,
   ExecutionLeaseRepository,
   GraphRuleError,
-  SqliteConnection,
   SqliteExecutionLeaseRepository,
   SqliteFencedEffectRepository,
   SqliteOutboundCallRepository,
   type Provider,
 } from "@agboss/core";
+import { SqliteConnection } from "@agboss/core/stores";
 import { beforeAll, describe, expect, expectTypeOf, it } from "vitest";
 import {
   REDIS_COORDINATION_STORES,

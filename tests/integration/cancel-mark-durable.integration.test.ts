@@ -1,8 +1,8 @@
 /**
  * agbossjs/agboss#1117 and #1152 on Redis — a tree's cancel mark is permanent and is read by the
  * sweep, so it lives in the durable store under `EXECUTION_ID_STORE` (its lease row in PostgreSQL or
- * MongoDB), as the kept execution ids do, never in Redis. Proved at the server: the cancel writes no
- * key, and a Redis emptied under the application (`FLUSHDB` on a database index of this file's own —
+ * MongoDB), as the kept execution ids do, never in Redis. Proved at the server: the cancel writes the
+ * cache of the marks only (D6: one key, pushed after the row, never read back), and a Redis emptied under the application (`FLUSHDB` on a database index of this file's own —
  * `FLUSHALL` would empty the other test files' keys on the same server) still answers that the cancel
  * was requested. A store that wrote its mark only to Redis would lose it there.
  */
@@ -25,7 +25,14 @@ describe.skipIf(DURABLE_URL === "")(
   () => {
     const space = testKeySpace("cancel-mark-durable");
     const opened: RedisConnection[] = [];
+    const durables: SharedKeptIds[] = [];
+    const durableOf = (): SharedKeptIds => {
+      const durable = new SharedKeptIds();
+      durables.push(durable);
+      return durable;
+    };
     afterAll(async () => {
+      for (const durable of durables) durable.close();
       for (const connection of opened) await connection.onDestroy();
       await space.close();
     });
@@ -48,37 +55,38 @@ describe.skipIf(DURABLE_URL === "")(
         durable,
       );
 
-    it("a cancel writes no key to Redis and is kept by the durable store", async () => {
+    it("a cancel is kept by the durable store; Redis gets only the cache of the marks (one key) and never reads it back", async () => {
       const connection = await connect();
-      await connection.client.flushDb();
-      const durable = new SharedKeptIds();
+      await connection.native.flushDb();
+      const durable = durableOf();
       const store = storeOf(connection, durable);
       const held = await store.acquire("default", "execution-1", LEASE);
-      const before = await connection.client.dbSize();
+      const before = await connection.native.dbSize();
 
       await store.requestCancel(TREE);
       await store.requestCancel(TREE);
 
       expect(held).toMatchObject({ token: 1 });
-      expect(await connection.client.dbSize()).toBe(before);
-      expect(durable.cancels.size).toBe(1);
+      // the marks' cache: one hash, however often the mark is pushed
+      expect(await connection.native.dbSize()).toBe(before + 1);
+      expect(await durable.isCancelRequested(TREE)).toBe(true);
       expect(await store.isCancelRequested(TREE)).toBe(true);
       expect(await store.isCancelRequested(OTHER)).toBe(false);
     });
 
     it("a Redis emptied under the application keeps the mark, and the cancel before an acquire still gives token 1", async () => {
       const connection = await connect();
-      await connection.client.flushDb();
-      const durable = new SharedKeptIds();
+      await connection.native.flushDb();
+      const durable = durableOf();
       const store = storeOf(connection, durable);
       await store.requestCancel(OTHER);
       expect(await store.acquire("default", "execution-2", LEASE)).toMatchObject({ token: 1 });
       expect(await store.acquire("default", "execution-1", LEASE)).toMatchObject({ token: 1 });
       await store.requestCancel(TREE);
 
-      await connection.client.flushDb();
+      await connection.native.flushDb();
 
-      expect(await connection.client.dbSize()).toBe(0);
+      expect(await connection.native.dbSize()).toBe(0);
       expect(await store.isCancelRequested(TREE)).toBe(true);
       expect(await store.isCancelRequested(OTHER)).toBe(true);
       expect(await storeOf(connection, durable).isCancelRequested(TREE)).toBe(true);
