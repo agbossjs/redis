@@ -1,13 +1,11 @@
 /**
- * agbossjs/agboss#693 — the cross-backend decision, checked by the core's one-backend rule (#526)
- * on the public `createApp`: a Redis lease store with a fenced-effect or outbound-call store of
- * another backend (SQLite here; PostgreSQL and MongoDB declare theirs the same way) fails assembly
- * with `[application.store-backend-mismatch]`, and so does any of them with the default in-memory
- * leases next to the Redis queue. The write must check the lease in its own transaction (ADR-0026,
- * Guarantees A2) — a PostgreSQL transaction cannot see a Redis lease taken over meanwhile — so the
- * rule is not weakened here. The layouts Redis supports assemble: Redis leases with no fencing
- * store listed; the Redis queue and rate limits beside a fencing set of another backend (no atomic
- * step spans them).
+ * agbossjs/agboss#693 — the layouts of the Redis stores, checked on the public `createApp`. Under
+ * the 0.1.1 cluster lease (D6) the fenced stores check the database's lease row (the store under
+ * `EXECUTION_ID_STORE`), not Redis: a SQLite fencing set beside Redis leases is no
+ * `[application.store-backend-mismatch]` — Redis only decides liveness. The layouts assemble:
+ * Redis leases with no fencing store listed; with a SQLite fencing set; the Redis queue and rate
+ * limits beside a fencing set of another backend (no atomic step spans them). A cross-backend
+ * mismatch of the database's own lease and fencing stores is the core's rule, tested there.
  */
 import {
   createApp,
@@ -54,47 +52,9 @@ async function backendViolationsOf(providers: readonly Provider[]): Promise<read
     .map((found) => `[${found.code}] ${found.message}`);
 }
 
-const LEASES = "RedisExecutionLeaseRepository";
-
-const mismatch = (
-  fencing: string,
-  backend: string,
-  leases: string,
-  leaseBackend: string,
-): unknown =>
-  expect.stringMatching(
-    new RegExp(
-      `^\\[application\\.store-backend-mismatch\\] ${fencing} \\(backend "${backend}"\\) .*${leases} \\(backend "${leaseBackend}"\\)`,
-      "u",
-    ),
-  );
-
-describe("agbossjs/agboss#693: Redis leases with a fencing store of another backend fail assembly", () => {
+describe("agbossjs/agboss#693: the Redis lease store's backend", () => {
   it("the Redis lease store declares its own backend", () => {
     expect(RedisExecutionLeaseRepository.store.backend).toBe("redis");
-  });
-
-  it.each([
-    [SqliteFencedEffectRepository, "SqliteFencedEffectRepository"],
-    [SqliteOutboundCallRepository, "SqliteOutboundCallRepository"],
-  ] as const)(
-    "AC2: Redis leases (their ids under EXECUTION_ID_STORE) with %o → store-backend-mismatch",
-    async (store, name) => {
-      expect(
-        await backendViolationsOf([
-          ...[RedisConnection, SqliteConnection, RedisExecutionLeaseRepository],
-          ...[LAYOUT_EXECUTION_IDS, store],
-        ]),
-      ).toEqual([mismatch(name, "sqlite", LEASES, "redis")]);
-    },
-  );
-
-  it("both, at once: each named", async () => {
-    const violations = await backendViolationsOf([
-      ...[RedisConnection, SqliteConnection, RedisExecutionLeaseRepository, LAYOUT_EXECUTION_IDS],
-      ...[SqliteFencedEffectRepository, SqliteOutboundCallRepository],
-    ]);
-    expect(violations).toHaveLength(2);
   });
 });
 
@@ -109,6 +69,18 @@ describe.skipIf(DURABLE_URL === "")(
         ]),
       ).toEqual([]);
     });
+
+    it.each([[SqliteFencedEffectRepository], [SqliteOutboundCallRepository]] as const)(
+      "agbossjs/agboss#1321e D6: Redis leases with %o, the ids under EXECUTION_ID_STORE: the fence is the database's row, no mismatch",
+      async (store) => {
+        expect(
+          await backendViolationsOf([
+            ...[RedisConnection, SqliteConnection, RedisExecutionLeaseRepository],
+            ...[LAYOUT_EXECUTION_IDS, store],
+          ]),
+        ).toEqual([]);
+      },
+    );
 
     it("the Redis queue and rate limits beside a SQLite fencing set: not constrained", async () => {
       expect(

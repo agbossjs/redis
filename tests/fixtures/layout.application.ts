@@ -7,16 +7,18 @@ import {
   EXECUTION_ID_STORE,
   provide,
   SqliteExecutionLeaseRepository,
+  Ttl,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
-  start,
+  onStart,
   type Class,
   type Provider,
 } from "@agboss/core";
 import { WorkflowStartTextDto } from "@agboss/core/dto";
 import { usd, type Usd } from "@agboss/core/units";
 import { LayoutEnvironment } from "./environments/layout.contract.js";
+import { StopBatchWorkflow, StopItemWorkflow } from "./stop/stop.application.js";
 
 /**
  * agbossjs/agboss#693 — an application on the given stores, for the assembly checks of
@@ -41,7 +43,8 @@ export class EchoWorkflowFinish {}
 @Workflow({
   name: "echo-workflow",
   version: "1.0.0",
-  flow: [start(EchoWorkflowStart).returns(WorkflowStartTextDto).toFinish(EchoWorkflowFinish)],
+  historyTtl: Ttl.Forever,
+  flow: [onStart(EchoWorkflowStart).toFinish(EchoWorkflowFinish)],
 })
 export class EchoWorkflow {}
 
@@ -102,3 +105,7 @@ export function layoutOf(providers: readonly Provider[]): Class {
   class LayoutApplication {}
   return LayoutApplication;
 }
+
+// `agboss check` types the workflows the application module exports (.agboss/types.d.ts), the stop
+// tests' (`tests/fixtures/stop/`) included
+export { StopBatchWorkflow, StopItemWorkflow };

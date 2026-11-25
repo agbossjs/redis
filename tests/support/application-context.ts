@@ -21,7 +21,8 @@ export class TestApplicationContext extends ApplicationContext {
 
   constructor(environment: object, instanceId = "instance-1") {
     super();
-    this.environment = environment;
+    // the test's object is the store's own settings, not the layout application's typed environment
+    this.environment = environment as ApplicationContext["environment"];
     this.instanceId = instanceId;
   }
 }

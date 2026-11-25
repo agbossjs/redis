@@ -33,9 +33,7 @@ describe.skipIf(!HAS_DOCKER)("#954: close() against a paused Redis leaves no soc
   it("an idle application: every socket to the server is destroyed when close() returns", async () => {
     const port = Number(new URL(server.url).port);
     process.env.AGBOSS_STOP_REDIS_URL = server.url;
-    process.env.AGBOSS_STOP_REDIS_PREFIX = `i954-${String(Date.now())}`;
     process.env.AGBOSS_STOP_SQLITE_PATH = ":memory:";
-    process.env.AGBOSS_STOP_OPENROUTER_KEY = "placeholder";
     const unhandled = watchUnhandled();
     const sockets = trackSockets(port);
     try {

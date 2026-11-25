@@ -2,7 +2,6 @@ import {
   env,
   Injectable,
   secret,
-  SqliteCheckpointSaver,
   SqliteCostLedgerRepository,
   SqliteExecutionHistoryRepository,
   SqliteExecutionAuditLogRepository,
@@ -14,6 +13,7 @@ import {
   SqlitePausedExecutionRepository,
   type Secret,
 } from "@agboss/core";
+import { SqliteCheckpointSaver } from "@agboss/core/internal";
 import { SqliteConnection } from "@agboss/core/stores";
 import { FaultStoreTime, type FaultStoreSet } from "@agboss/core/testing/faults";
 import {
@@ -32,6 +32,11 @@ import {
  * file (`AGBOSS_FAULT_DATABASE_URL`, cut by the suite's store outages). The fencing stores stay on
  * one transactional backend with their leases (#526): a Redis lease store cannot back the
  * fixture's fenced charge, and is explored by `storeConformance` and the crash test instead.
+ *
+ * Two seams the core's own set (`tests/faults/sqlite.fault-stores.ts`) reaches by its source path
+ * are not on a public entry yet, and are restated here: `SqliteCheckpointSaver` (only `/internal`
+ * has it) and `requireSqliteTransaction` (the set keeps its pod's `SqliteConnection` and asks it
+ * `requireTransaction()`, `FaultBusinessConnection` below).
  */
 
 /** The table of the fixture's business rows. */
