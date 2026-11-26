@@ -15,16 +15,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cli = createRequire(join(ROOT, "package.json")).resolve("@agboss/cli/bin/agboss.js");
 execFileSync(
   process.execPath,
-  [cli, "check", "--application", "tests/fixtures/layout.application.ts", "--env", "layout"],
+  [cli, "check", "--application", "tests/fixtures/layout.application.ts"],
   {
     cwd: ROOT,
     stdio: ["ignore", "ignore", "inherit"],
     env: {
       ...process.env,
       AGBOSS_LAYOUT_REDIS_URL: "redis://placeholder:6379",
-      AGBOSS_LAYOUT_REDIS_PREFIX: "placeholder:",
       AGBOSS_LAYOUT_SQLITE_PATH: ":memory:",
-      AGBOSS_LAYOUT_OPENROUTER_KEY: "placeholder",
     },
   },
 );

@@ -40,8 +40,8 @@ against a real Redis (`AGBOSS_REDIS_TEST_URL`) · api-extractor (`api/redis.api.
 ## Architecture
 
 - `src/connection/` — `RedisConnection` (DI token, `deps: [ApplicationContext]`, or
-  `new RedisConnection({ url })` in a script/test); its settings from the environment
-  (`redisUrl: Secret`, `redisDurabilityOptOut`, `redisKeyPrefix`); the start checks — durability
+  `new RedisConnection({ url })` in a script/test); its settings from the application's
+  `@ClusterStorage` driver (`RedisDriver({ url, keyPrefix, durabilityOptOut, timeouts })`, `driver-settings.ts`), never the environment (#1324); the start checks — durability
   (`durability.ts`: `appendonly yes`, `appendfsync always`, `no-appendfsync-on-rewrite no`,
   `maxmemory-policy noeviction` → `RedisDurabilityError` unless the opt-out
   `acknowledged-writes-may-be-lost` accepts the loss) and one primary (`deployment.ts`: no replica,

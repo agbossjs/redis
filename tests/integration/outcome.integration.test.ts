@@ -125,7 +125,7 @@ describe.skipIf(DURABLE_URL === "")(
       const leases = new RedisExecutionLeaseRepository(
         connection,
         clock,
-        new TestApplicationContext({}, "instance-lost-answer"),
+        new TestApplicationContext("instance-lost-answer"),
         new SharedKeptIds(),
       );
       proxy.dropAfter(/EVALSHA/u);
@@ -278,7 +278,7 @@ describe.skipIf(DURABLE_URL === "")(
       const limits = new RedisRateLimitRepository(
         connection,
         clock,
-        new TestApplicationContext({}, "instance-limits"),
+        new TestApplicationContext("instance-limits"),
       );
       const slot = await limits.acquire("outcome-slots", 1, seconds(30));
       if (slot === undefined) throw new Error("a free slot is taken");
@@ -302,7 +302,7 @@ describe.skipIf(DURABLE_URL === "")(
       const queue = new RedisChildExecutionQueueRepository(
         connection,
         clock,
-        new TestApplicationContext({}, "instance-queue"),
+        new TestApplicationContext("instance-queue"),
         new RecordingLogger(),
       );
       proxy.dropAfter(/EVALSHA/u);

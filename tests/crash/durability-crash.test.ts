@@ -70,7 +70,7 @@ async function leasesOn(
     ...(optOut === undefined ? {} : { durabilityOptOut: optOut }),
   });
   await connection.onInit();
-  const application = new TestApplicationContext({}, "instance-1");
+  const application = new TestApplicationContext("instance-1");
   const clock = new StoreClock(StoreTimeSource.Database, { now: () => new Date(0) });
   const leases = new RedisExecutionLeaseRepository(
     connection,

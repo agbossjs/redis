@@ -14,9 +14,9 @@ export interface RedisSettingsErrorOptions {
 }
 
 /**
- * The environment does not give what the Redis stores need: `redisUrl` (a `Secret` holding a
- * `redis://` or `rediss://` URL), and when set, `redisDurabilityOptOut` (exactly
- * `acknowledged-writes-may-be-lost`). The URL itself is never printed.
+ * The storage does not give what the Redis stores need: the `url` of the `@ClusterStorage`'s
+ * `RedisDriver` (a `secret(…)` holding a `redis://` or `rediss://` URL), and when set,
+ * `durabilityOptOut` (exactly `acknowledged-writes-may-be-lost`). The URL itself is never printed.
  */
 export class RedisSettingsError extends AGBossError {
   static override readonly code = "redis.settings-invalid" as const;

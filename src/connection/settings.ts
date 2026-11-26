@@ -1,6 +1,5 @@
-import { z } from "zod";
 import { RedisSettingsError } from "../errors.js";
-import { RedisDurabilityOptOut } from "./durability.js";
+import type { RedisDurabilityOptOut } from "./durability.js";
 
 /** What one application instance's connection is made of. */
 export interface RedisConnectionSettings {
@@ -20,7 +19,7 @@ export interface RedisConnectionSettings {
    * it and gives the answer the other half, then warns, subscribes on a new connection and wakes
    * once.
    * Another value (0, 1, a negative or a fractional number) is a `RedisSettingsError` at construction
-   * (agbossjs/agboss#1029), as in the environment.
+   * (agbossjs/agboss#1029), as in the driver.
    */
   readonly watchLivenessSeconds?: number;
 }
@@ -33,78 +32,13 @@ export const DEFAULT_WATCH_LIVENESS_SECONDS = 10;
 
 /**
  * `seconds` when the child queue's watch can run on it — a whole number of at least 2, as the
- * environment's field is checked —, else `RedisSettingsError` naming `watchLivenessSeconds`
+ * driver's option is checked —, else `RedisSettingsError` naming `watchLivenessSeconds`
  * (agbossjs/agboss#1029): a settings object a script or a provider builds is trusted no more than
- * the environment.
+ * the driver's options.
  */
 export function checkedWatchLivenessOf(seconds: number | undefined): number | undefined {
   if (seconds === undefined || (Number.isInteger(seconds) && seconds >= 2)) return seconds;
   throw new RedisSettingsError({
     message: `watchLivenessSeconds must be a whole number of at least 2, got ${String(seconds)}`,
   });
-}
-
-/** A `Secret` of the environment: only `reveal()` gives its value. */
-interface RevealedSecret {
-  reveal(): string;
-}
-
-const isSecret = (value: unknown): value is RevealedSecret =>
-  typeof value === "object" &&
-  value !== null &&
-  "reveal" in value &&
-  typeof value.reveal === "function";
-
-/** The fields the Redis stores read from the application's environment. */
-const RedisEnvironment = z.object({
-  redisUrl: z.custom<RevealedSecret>(isSecret, {
-    message: 'redisUrl must be a Secret: redisUrl: secret("REDIS_URL")',
-  }),
-  redisDurabilityOptOut: z
-    .enum(RedisDurabilityOptOut, {
-      message: `redisDurabilityOptOut must be exactly "${RedisDurabilityOptOut.AcknowledgedWritesMayBeLost}": the opt-out names the guarantee it gives up`,
-    })
-    .optional(),
-  redisKeyPrefix: z
-    .string()
-    .min(1, { message: "redisKeyPrefix is empty: leave it unset for the default agboss:" })
-    .optional(),
-  redisWatchLivenessSeconds: z
-    .number({ message: "redisWatchLivenessSeconds must be a number" })
-    .int("redisWatchLivenessSeconds must be a whole number")
-    .min(2, "redisWatchLivenessSeconds must be at least 2")
-    .optional(),
-});
-
-const MISSING_URL =
-  'redisUrl is missing: declare redisUrl!: Secret in the environment contract and set redisUrl: secret("REDIS_URL")';
-
-/**
- * The connection settings an application's environment gives: `redisUrl` (required, a `Secret`),
- * `redisDurabilityOptOut`, `redisKeyPrefix` and `redisWatchLivenessSeconds` (optional). A missing or mistyped field fails with
- * `RedisSettingsError`, naming it — the URL itself is never printed.
- */
-export function settingsOfEnvironment(environment: unknown): RedisConnectionSettings {
-  const parsed = RedisEnvironment.safeParse(environment);
-  if (!parsed.success) {
-    const isUrlMissing = Reflect.get(Object(environment), "redisUrl") === undefined;
-    const problems = parsed.error.issues.map((issue) =>
-      issue.path[0] === "redisUrl" && isUrlMissing ? MISSING_URL : issue.message,
-    );
-    throw new RedisSettingsError({
-      message: `the Redis stores need their environment fields — ${problems.join("; ")}`,
-    });
-  }
-  const { redisUrl, redisDurabilityOptOut, redisKeyPrefix } = parsed.data;
-  const { redisWatchLivenessSeconds } = parsed.data;
-  const url = redisUrl.reveal();
-  if (url.length === 0) throw new RedisSettingsError({ message: "redisUrl is empty" });
-  return {
-    url,
-    durabilityOptOut: redisDurabilityOptOut,
-    ...(redisKeyPrefix === undefined ? {} : { keyPrefix: redisKeyPrefix }),
-    ...(redisWatchLivenessSeconds === undefined
-      ? {}
-      : { watchLivenessSeconds: redisWatchLivenessSeconds }),
-  };
 }

@@ -11,7 +11,7 @@ import {
   reconnectStrategyOf,
   START_CONNECT_RETRIES,
 } from "../../src/connection/redis-connection.js";
-import { revealing, TestApplicationContext } from "../support/application-context.js";
+import { revealing } from "../support/application-context.js";
 
 const URL = "redis://cache:6379/0";
 
@@ -26,10 +26,8 @@ function errorOf(build: () => unknown): unknown {
 }
 
 describe("RedisConnection: one client per application instance", () => {
-  it("is built from the application's environment, not connected until onInit", async () => {
-    const connection = new RedisConnection(
-      new TestApplicationContext({ redisUrl: revealing(URL) }),
-    );
+  it("is built from the driver's resolved settings, not connected until onInit", async () => {
+    const connection = new RedisConnection({ kind: "redis", url: revealing(URL) });
 
     expect(connection.native.isOpen).toBe(false);
     await connection.onDestroy();
@@ -51,19 +49,15 @@ describe("RedisConnection: one client per application instance", () => {
     await expect(connection.onDestroy()).resolves.toBeUndefined();
   });
 
-  it("an environment without redisUrl fails before any client is built", () => {
-    expect(() => new RedisConnection(new TestApplicationContext({}))).toThrow(
-      /redisUrl is missing/,
-    );
+  it("an application with no Redis storage fails before any client is built", () => {
+    expect(() => new RedisConnection()).toThrow(RedisSettingsError);
+    expect(() => new RedisConnection()).toThrow(/@ClusterStorage/);
   });
 
   it("an opt-out that does not name the guarantee fails at construction", () => {
-    const context = new TestApplicationContext({
-      redisUrl: revealing(URL),
-      redisDurabilityOptOut: "yes",
-    });
+    const resolved = { kind: "redis", url: revealing(URL), durabilityOptOut: "yes" };
 
-    expect(() => new RedisConnection(context)).toThrow(RedisSettingsError);
+    expect(() => new RedisConnection(resolved)).toThrow(RedisSettingsError);
   });
 });
 

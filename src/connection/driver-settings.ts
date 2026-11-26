@@ -7,8 +7,7 @@ import { checkedWatchLivenessOf, type RedisConnectionSettings } from "./settings
 /**
  * The settings `RedisDriver` resolved (agbossjs/agboss#1321f): its options with the `secret(…)` of
  * the URL revealed and the watch's liveness in `Milliseconds` (`DriverTimeouts`), read once at
- * start. What `RedisConnection` makes its client of when the application names a
- * `@ClusterStorage`; the environment's `redis…` fields are read only without one.
+ * start. What `RedisConnection` makes its client of.
  */
 
 /** A `Secret` of the resolved settings: only `reveal()` gives its value. */

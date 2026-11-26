@@ -4,26 +4,27 @@ import {
   BudgetPeriod,
   BudgetScope,
   type BudgetHandler,
-  EXECUTION_ID_STORE,
-  provide,
-  SqliteExecutionLeaseRepository,
+  ClusterStorage,
+  DatabaseStorage,
+  env,
+  secret,
+  SqliteDriver,
   Ttl,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
   onStart,
-  type Class,
-  type Provider,
 } from "@agboss/core";
 import { WorkflowStartTextDto } from "@agboss/core/dto";
-import { usd, type Usd } from "@agboss/core/units";
-import { LayoutEnvironment } from "./environments/layout.contract.js";
+import { hours, usd, type Usd } from "@agboss/core/units";
+import { RedisDriver } from "../../src/index.js";
 import { StopBatchWorkflow, StopItemWorkflow } from "./stop/stop.application.js";
 
 /**
- * agbossjs/agboss#693 — an application on the given stores, for the assembly checks of
- * `tests/integration/store-layout.integration.test.ts`: one workflow that answers its message as
- * it is (no model, no step), its environment the Redis connection's fields and a SQLite path.
+ * agbossjs/agboss#693 — an application on Redis's cluster storage beside SQLite's database, for the
+ * assembly checks of `tests/layout/store-layout.test.ts`: one workflow that answers its message as
+ * it is (no model, no step); its Redis and its SQLite file are references its storages read from the
+ * process when it starts.
  */
 
 @WorkflowStart({
@@ -47,13 +48,6 @@ export class EchoWorkflowFinish {}
   flow: [onStart(EchoWorkflowStart).toFinish(EchoWorkflowFinish)],
 })
 export class EchoWorkflow {}
-
-/**
- * agbossjs/agboss#891 — the ids the Redis leases hand out, kept by a durable lease store under
- * `EXECUTION_ID_STORE` (SQLite here; PostgreSQL's or MongoDB's in an application): the container
- * creates it under the token only — no `new`, no second lease store.
- */
-export const LAYOUT_EXECUTION_IDS = provide(EXECUTION_ID_STORE, SqliteExecutionLeaseRepository);
 
 @Budget({
   name: "layout-application-budget",
@@ -80,31 +74,39 @@ export class LayoutExecutionBudget implements BudgetHandler {
   }
 }
 
-const BUDGETS = [LayoutApplicationBudget, LayoutTenantBudget, LayoutExecutionBudget];
+/** The prefix of the layout's keys: one per package run is enough, its executions' ids carry the process. */
+export const LAYOUT_KEY_PREFIX = "agboss-layout:";
 
-/** The application `npm run check:types` writes the flow types of (no store listed). */
+/**
+ * SQLite keeps the rest, and the ids Redis's leases hand out: the database's lease store, which the
+ * container binds under `EXECUTION_ID_STORE` (agbossjs/agboss#891, #1321), its row the authority.
+ */
+@DatabaseStorage({
+  name: "layout-database-storage",
+  description: "The layout tests' SQLite file",
+  driver: SqliteDriver({ path: env("AGBOSS_LAYOUT_SQLITE_PATH") }),
+  auditLogTtl: hours(24),
+  ledgerEntriesTtl: hours(24),
+})
+export class LayoutDatabaseStorage {}
+
+/** Redis coordinates: the leases, the child queue and the rate limits. */
+@ClusterStorage({
+  name: "layout-cluster-storage",
+  description: "The layout tests' Redis",
+  driver: RedisDriver({ url: secret("AGBOSS_LAYOUT_REDIS_URL"), keyPrefix: LAYOUT_KEY_PREFIX }),
+})
+export class LayoutClusterStorage {}
+
+/** The application the layout tests assemble, and `npm run check:types` writes the flow types of. */
 @Application({
   name: "layout-application",
   version: "1.0.0",
-  environment: LayoutEnvironment,
+  storage: { database: LayoutDatabaseStorage, cluster: LayoutClusterStorage },
   workflows: [EchoWorkflow],
-  budgets: BUDGETS,
+  budgets: [LayoutApplicationBudget, LayoutTenantBudget, LayoutExecutionBudget],
 })
 export class LayoutApplication {}
-
-/** An application of the echo workflow on `providers`. */
-export function layoutOf(providers: readonly Provider[]): Class {
-  @Application({
-    name: "layout-application",
-    version: "1.0.0",
-    environment: LayoutEnvironment,
-    workflows: [EchoWorkflow],
-    budgets: BUDGETS,
-    providers: [...providers],
-  })
-  class LayoutApplication {}
-  return LayoutApplication;
-}
 
 // `agboss check` types the workflows the application module exports (.agboss/types.d.ts), the stop
 // tests' (`tests/fixtures/stop/`) included

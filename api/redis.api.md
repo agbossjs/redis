@@ -58,6 +58,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
     ping(): Promise<void>;
     // (undocumented)
     saveIfAbsent(child: QueuedChildExecution): Promise<boolean>;
+    static readonly store: StoreDescriptor;
     watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch>;
     // (undocumented)
     withdrawByTenantIdAndExecutionIdIfQueued(tenantId: string, executionId: string): Promise<boolean>;
@@ -83,7 +84,7 @@ export interface RedisClient {
 
 // @public
 export class RedisConnection implements OnInit, OnDestroy {
-    constructor(source: ApplicationContext | RedisConnectionSettings, clock?: Clock, resolved?: ResolvedSettings);
+    constructor(source?: RedisConnectionSettings | ResolvedSettings, clock?: Clock);
     readonly client: RedisClient;
     durability(): Promise<RedisDurability>;
     readonly keyPrefix: string;
@@ -92,6 +93,7 @@ export class RedisConnection implements OnInit, OnDestroy {
     ping(): Promise<void>;
     requireDurability(): Promise<RedisDurability>;
     requireSupportedTopology(): Promise<RedisTopology>;
+    static readonly store: StoreDescriptor;
     topology(): Promise<RedisTopology>;
 }
 
@@ -210,6 +212,7 @@ export class RedisRateLimitRepository extends RateLimitRepository {
     release(rateLimitLease: RateLimitLease): Promise<void>;
     // (undocumented)
     renew(rateLimitLease: RateLimitLease, lease: Milliseconds): Promise<boolean>;
+    static readonly store: StoreDescriptor;
 }
 
 // @public

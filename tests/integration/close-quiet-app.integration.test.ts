@@ -37,7 +37,7 @@ describe.skipIf(!HAS_DOCKER)("#954: close() against a paused Redis leaves no soc
     const unhandled = watchUnhandled();
     const sockets = trackSockets(port);
     try {
-      const app = await createApp(StopApplication, { env: "stop" });
+      const app = await createApp(StopApplication);
       // paused as the child queue's watch is still opening its subscriber: no worker owns it yet
       await server.pause();
       await sleep(2000);

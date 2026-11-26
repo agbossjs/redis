@@ -10,6 +10,7 @@ import {
   type ChildExecutionQueueCounts,
   type ChildExecutionQueueWatch,
   type QueuedChildExecution,
+  type StoreDescriptor,
 } from "@agboss/core";
 import { RedisConnection } from "../connection/redis-connection.js";
 import { runScript } from "../connection/scripts.js";
@@ -47,6 +48,9 @@ import { LivenessWatch } from "./queue/queue-watch-liveness.js";
  */
 @Injectable({ deps: [RedisConnection, Clock, ApplicationContext, Logger] })
 export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepository {
+  /** Its own backend: the store a `@ClusterStorage` of `RedisDriver` is made of (agbossjs/agboss#1321, #1324). */
+  static readonly store: StoreDescriptor = { backend: "redis" };
+
   constructor(
     private readonly connection: RedisConnection,
     private readonly clock: Clock,
@@ -217,7 +221,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
    * connection reconnects (at once, ~5 ms; while the server stays down 2 s, doubling, at most 30 s
    * apart), subscribes again and wakes `onQueued` once when back — a message sent while it was down is lost (pub/sub keeps nothing),
    * so that wake-up stands for it, and the core's sweep stays the floor. A connection that dies
-   * silently is noticed within `redisWatchLivenessSeconds` (agbossjs/agboss#789): a warning
+   * silently is noticed within the driver's `timeouts.watchLiveness` (agbossjs/agboss#789): a warning
    * (`child-queue.watch-connection-lost`), a new subscription and one wake-up. Rejects when the
    * server does not answer: the core opens it again at its next sweep.
    */

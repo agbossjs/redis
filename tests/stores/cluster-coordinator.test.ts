@@ -55,7 +55,7 @@ function scripted(reply: (call: ScriptRun) => unknown, exists = 0) {
   return { connection, calls: runs };
 }
 
-const application = (id: string) => new TestApplicationContext({}, id);
+const application = (id: string) => new TestApplicationContext(id);
 
 describe("the cluster's lease on Redis: the coordinator", () => {
   it("raises the counter to the row's token with RAISE_EPOCH on the tree's lease key", async () => {

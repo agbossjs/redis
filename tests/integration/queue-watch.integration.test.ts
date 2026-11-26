@@ -69,7 +69,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#777: the Redis child queue'
   const queueOf = async (instanceId: string) => {
     const connection = await connectionOf(space);
     space.idle.push(connection);
-    const context = new TestApplicationContext({}, instanceId);
+    const context = new TestApplicationContext(instanceId);
     return {
       connection,
       queue: new RedisChildExecutionQueueRepository(
@@ -159,7 +159,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#777: the Redis child queue'
     const queue = new RedisChildExecutionQueueRepository(
       connection,
       clock,
-      new TestApplicationContext({}),
+      new TestApplicationContext(),
       new RecordingLogger(),
     );
     await expect(queue.watchQueued(() => undefined)).rejects.toThrow();

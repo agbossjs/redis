@@ -61,12 +61,7 @@ describe.skipIf(DURABLE_URL === "")(
       const direct = await connectionOf(space);
       space.idle.push(direct);
       const queueOn = (conn: RedisConnection, id: string, log: RecordingLogger) =>
-        new RedisChildExecutionQueueRepository(
-          conn,
-          clock,
-          new TestApplicationContext({}, id),
-          log,
-        );
+        new RedisChildExecutionQueueRepository(conn, clock, new TestApplicationContext(id), log);
       return {
         proxy,
         clock,

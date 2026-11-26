@@ -16,8 +16,8 @@ import { revealing } from "../support/application-context.js";
 
 /**
  * #1321: `RedisDriver` — the value `@ClusterStorage({ driver })` takes — and the connection's
- * settings as the driver resolved them (`DriverTimeouts.watchLiveness` in `Milliseconds`), beside
- * the environment's fields that stay for an application with no storage component.
+ * settings as the driver resolved them (`DriverTimeouts.watchLiveness` in `Milliseconds`) — the only
+ * source of the connection's settings (agbossjs/agboss#1324: the environment is none).
  */
 const URL = "redis://cache:6379/0";
 const resolved = (more: Record<string, unknown> = {}) => ({
@@ -91,12 +91,8 @@ describe("the settings a driver resolved", () => {
     );
   });
 
-  it("make the connection: its prefix and watch bound are the driver's, the environment's are not read", () => {
-    const connection = new RedisConnection(
-      { url: "redis://ignored:1" },
-      undefined,
-      resolved({ keyPrefix: "app:", watchLiveness: 30_000 }),
-    );
+  it("make the connection: its url, its prefix and its watch bound are the driver's", () => {
+    const connection = new RedisConnection(resolved({ keyPrefix: "app:", watchLiveness: 30_000 }));
 
     expect(connection.keyPrefix).toBe("app:");
     expect(connection.watchLivenessSeconds).toBe(30);

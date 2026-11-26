@@ -5,6 +5,7 @@ import {
   Injectable,
   RateLimitRepository,
   type RateLimitLease,
+  type StoreDescriptor,
 } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
@@ -28,6 +29,9 @@ const Total = z.string().transform(Number).pipe(z.number());
  */
 @Injectable({ deps: [RedisConnection, Clock, ApplicationContext] })
 export class RedisRateLimitRepository extends RateLimitRepository {
+  /** Its own backend: the store a `@ClusterStorage` of `RedisDriver` is made of (agbossjs/agboss#1321, #1324). */
+  static readonly store: StoreDescriptor = { backend: "redis" };
+
   constructor(
     private readonly connection: RedisConnection,
     private readonly clock: Clock,

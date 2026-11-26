@@ -29,12 +29,12 @@ describe.skipIf(DURABLE_URL === "")("#1321e: the cluster's lease scripts on a se
   let connection: RedisConnection;
 
   const coordinatorOf = (instanceId: string) =>
-    new RedisClusterCoordinator(connection, CLOCK, new TestApplicationContext({}, instanceId));
+    new RedisClusterCoordinator(connection, CLOCK, new TestApplicationContext(instanceId));
   const storeOf = (instanceId: string) =>
     new RedisExecutionLeaseRepository(
       connection,
       CLOCK,
-      new TestApplicationContext({}, instanceId),
+      new TestApplicationContext(instanceId),
       space.keptIds,
     );
   const leaseKey = () => leaseKeyOf(space.prefix, TREE.tenantId, TREE.rootExecutionId);

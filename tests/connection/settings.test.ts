@@ -2,120 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_KEY_PREFIX,
   DEFAULT_WATCH_LIVENESS_SECONDS,
-  RedisDurabilityOptOut,
   RedisSettingsError,
 } from "../../src/index.js";
-import { settingsOfEnvironment } from "../../src/connection/settings.js";
-import { revealing } from "../support/application-context.js";
 
-const URL = "redis://app:secret@cache:6379/0";
-
-describe("the environment fields of the Redis stores", () => {
-  it("redisUrl is a Secret: its revealed value is the URL; the opt-out is optional", () => {
-    expect(settingsOfEnvironment({ redisUrl: revealing(URL) })).toStrictEqual({
-      url: URL,
-      durabilityOptOut: undefined,
-    });
-  });
-
-  it.each([null, { reveal: "not a function" }, 42])(
-    "a redisUrl of %j, no Secret, is the named error",
-    (redisUrl) => {
-      expect(() => settingsOfEnvironment({ redisUrl })).toThrow(RedisSettingsError);
-      expect(() => settingsOfEnvironment({ redisUrl })).toThrow(/redisUrl must be a Secret/);
-    },
-  );
-
-  it("redisDurabilityOptOut is read when it names the lost guarantee exactly", () => {
-    const settings = settingsOfEnvironment({
-      redisUrl: revealing(URL),
-      redisDurabilityOptOut: "acknowledged-writes-may-be-lost",
-    });
-
-    expect(settings.durabilityOptOut).toBe(RedisDurabilityOptOut.AcknowledgedWritesMayBeLost);
-  });
-
-  it.each(["yes", "true", "skip", "ACKNOWLEDGED-WRITES-MAY-BE-LOST", ""])(
-    "an opt-out that does not name the guarantee (%o) fails: no vague opt-out",
-    (value) => {
-      expect(() =>
-        settingsOfEnvironment({ redisUrl: revealing(URL), redisDurabilityOptOut: value }),
-      ).toThrow(/redisDurabilityOptOut must be exactly "acknowledged-writes-may-be-lost"/);
-    },
-  );
-
-  it("a flag is not an opt-out either", () => {
-    expect(() =>
-      settingsOfEnvironment({ redisUrl: revealing(URL), redisDurabilityOptOut: true }),
-    ).toThrow(RedisSettingsError);
-  });
-
-  it("a missing redisUrl fails, naming the field and how to declare it", () => {
-    expect(() => settingsOfEnvironment({})).toThrow(RedisSettingsError);
-    expect(() => settingsOfEnvironment({})).toThrow(
-      /redisUrl is missing: declare redisUrl!: Secret/,
-    );
-  });
-
-  it("an environment that is not an object fails with the named error", () => {
-    expect(() => settingsOfEnvironment(undefined)).toThrow(RedisSettingsError);
-    expect(() => settingsOfEnvironment(undefined)).toThrow(/need their environment fields/);
-  });
-
-  it("a redisUrl that is a plain string, not a Secret, fails without printing it", () => {
-    const failure = (): unknown => settingsOfEnvironment({ redisUrl: URL });
-
-    expect(failure).toThrow(/redisUrl must be a Secret/);
-    expect(failure).not.toThrow(/secret@cache/);
-  });
-
-  it("an empty redisUrl fails", () => {
-    expect(() => settingsOfEnvironment({ redisUrl: revealing("") })).toThrow("redisUrl is empty");
-  });
-
-  it("every problem is listed at once", () => {
-    expect(() => settingsOfEnvironment({ redisDurabilityOptOut: "yes" })).toThrow(
-      /redisUrl is missing[^;]*; redisDurabilityOptOut must be exactly/,
-    );
+describe("the settings of the Redis stores", () => {
+  it("the defaults a driver without the option leaves: the prefix and the watch's bound", () => {
+    expect(DEFAULT_KEY_PREFIX).toBe("agboss:");
+    expect(DEFAULT_WATCH_LIVENESS_SECONDS).toBe(10);
   });
 
   it("the error has its stable code", () => {
     expect(RedisSettingsError.code).toBe("redis.settings-invalid");
-  });
-
-  it("redisKeyPrefix is read when set; unset, the connection uses agboss:", () => {
-    expect(
-      settingsOfEnvironment({ redisUrl: revealing(URL), redisKeyPrefix: "billing:" }).keyPrefix,
-    ).toBe("billing:");
-    expect(settingsOfEnvironment({ redisUrl: revealing(URL) }).keyPrefix).toBeUndefined();
-    expect(DEFAULT_KEY_PREFIX).toBe("agboss:");
-  });
-
-  it("agbossjs/agboss#789: redisWatchLivenessSeconds is read when set; unset, the watch uses 10 s", () => {
-    expect(
-      settingsOfEnvironment({ redisUrl: revealing(URL), redisWatchLivenessSeconds: 6 })
-        .watchLivenessSeconds,
-    ).toBe(6);
-    expect(
-      settingsOfEnvironment({ redisUrl: revealing(URL) }).watchLivenessSeconds,
-    ).toBeUndefined();
-    expect(DEFAULT_WATCH_LIVENESS_SECONDS).toBe(10);
-  });
-
-  it.each([
-    [{ redisWatchLivenessSeconds: 1 }, /redisWatchLivenessSeconds must be at least 2/],
-    [{ redisWatchLivenessSeconds: 2.5 }, /redisWatchLivenessSeconds must be a whole number/],
-    [{ redisWatchLivenessSeconds: "5" }, /redisWatchLivenessSeconds must be a number/],
-  ])(
-    "agbossjs/agboss#789: a mistyped redisWatchLivenessSeconds fails, naming it: %o",
-    (fields, message) => {
-      expect(() => settingsOfEnvironment({ redisUrl: revealing(URL), ...fields })).toThrow(message);
-    },
-  );
-
-  it("an empty redisKeyPrefix fails: every application would share the bare key space", () => {
-    expect(() => settingsOfEnvironment({ redisUrl: revealing(URL), redisKeyPrefix: "" })).toThrow(
-      /redisKeyPrefix is empty/u,
-    );
   });
 });

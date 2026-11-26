@@ -7,7 +7,6 @@ import {
   ChildPlacement,
   ClusterStorage,
   DatabaseStorage,
-  EmptyEnvironment,
   ExecutionContext,
   env,
   listOf,
@@ -167,7 +166,6 @@ export class StopClusterStorage {}
 @Application({
   name: "stop-application",
   version: "1.0.0",
-  environment: EmptyEnvironment,
   storage: { database: StopDatabaseStorage, cluster: StopClusterStorage },
   workflows: [StopBatchWorkflow, StopItemWorkflow],
   budgets: [StopApplicationBudget, StopTenantBudget, StopExecutionBudget],

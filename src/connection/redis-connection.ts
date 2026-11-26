@@ -1,11 +1,4 @@
-import {
-  ApplicationContext,
-  Clock,
-  EnvironmentField,
-  Injectable,
-  type OnDestroy,
-  type OnInit,
-} from "@agboss/core";
+import { Clock, Injectable, type OnDestroy, type OnInit, type StoreDescriptor } from "@agboss/core";
 import { CLUSTER_SETTINGS, type ResolvedSettings } from "@agboss/core/stores";
 import { createClient } from "@redis/client";
 import type { NodeRedisClient, RedisClient } from "./redis-client.js";
@@ -24,7 +17,6 @@ import {
   checkedWatchLivenessOf,
   DEFAULT_KEY_PREFIX,
   DEFAULT_WATCH_LIVENESS_SECONDS,
-  settingsOfEnvironment,
   type RedisConnectionSettings,
 } from "./settings.js";
 
@@ -109,40 +101,42 @@ export function clientOf(
 }
 
 /**
- * The settings of a connection: the driver's resolved settings when the application names a
- * `@ClusterStorage` of `RedisDriver` (agbossjs/agboss#1321), else the environment's fields (until
- * they are removed), else the settings object a script or a test gave.
+ * The settings of a connection: the resolved settings of the application's `@ClusterStorage` of
+ * `RedisDriver` (agbossjs/agboss#1321), else the settings object a script or a test gave. An
+ * application with no Redis storage and no object is `RedisSettingsError`: the environment is no
+ * source of the connection any more (agbossjs/agboss#1324).
  */
 function settingsOf(
-  source: ApplicationContext | RedisConnectionSettings,
-  resolved: ResolvedSettings | undefined,
+  source: RedisConnectionSettings | ResolvedSettings | undefined,
 ): RedisConnectionSettings {
-  if (resolved?.kind === "redis") return settingsOfResolved(resolved);
-  return source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
+  if (source === undefined)
+    throw new RedisSettingsError({
+      message:
+        "the Redis stores need the application's @ClusterStorage({ driver: RedisDriver({ url: secret(…) }) }) — the server they open",
+    });
+  if ("kind" in source) return settingsOfResolved(source);
+  return source;
 }
 
 /**
- * The Redis server of one application instance: one node-redis client on the environment's
- * `redisUrl`, shared by every Redis store the application lists. At `onInit` it connects and
+ * The Redis server of one application instance: one node-redis client on the `url` of the
+ * application's `@ClusterStorage({ driver: RedisDriver({ url }) })`, shared by every Redis store the
+ * application lists. At `onInit` it connects and
  * checks the server keeps an acknowledged write across a crash (`appendonly yes`,
  * `appendfsync always`): otherwise it fails with `RedisDurabilityError` and closes the client,
- * unless `redisDurabilityOptOut` names the lost guarantee. At `onDestroy`, after its stores, it
- * closes the client. Created by the container (`deps: [ApplicationContext]`) or by a script or a
+ * unless the driver's `durabilityOptOut` names the lost guarantee. At `onDestroy`, after its stores, it
+ * closes the client. Created by the container (`deps: [CLUSTER_SETTINGS, Clock]`) or by a script or a
  * test (`new RedisConnection({ url })`). Only coordination stores live here (leases, rate limits,
  * the child queue); fenced effects and outbound calls stay on a durable store (agbossjs/agboss#526).
  */
-@Injectable({
-  deps: [ApplicationContext, Clock, CLUSTER_SETTINGS],
-  // checked at the application's assembly (agbossjs/agboss#511): a contract without redisUrl
-  // fails with [environment.missing-field] before anything starts
-  environmentFields: {
-    redisUrl: EnvironmentField.secret(),
-    redisDurabilityOptOut: EnvironmentField.text({ optional: true }),
-    redisKeyPrefix: EnvironmentField.text({ optional: true }),
-    redisWatchLivenessSeconds: EnvironmentField.integer({ optional: true }),
-  },
-})
+@Injectable({ deps: [CLUSTER_SETTINGS, Clock] })
 export class RedisConnection implements OnInit, OnDestroy {
+  /**
+   * Its own backend: the connection a `@ClusterStorage` of `RedisDriver` makes, reading the cluster's
+   * settings (`CLUSTER_SETTINGS`); a fault set's pod puts it, with the Redis stores, on that storage.
+   */
+  static readonly store: StoreDescriptor = { backend: "redis" };
+
   /** The instance's client, as the package's interface: every store's commands and scripts. */
   readonly client: RedisClient;
   /**
@@ -152,7 +146,7 @@ export class RedisConnection implements OnInit, OnDestroy {
    * @internal
    */
   readonly native: NodeRedisClient;
-  /** What every key of the stores starts with (`redisKeyPrefix`, default `agboss:`). */
+  /** What every key of the stores starts with (the driver's `keyPrefix`, default `agboss:`). */
   readonly keyPrefix: string;
   /**
    * The clock that bounds the close at the stop (agbossjs/agboss#923); none: the close is in order only.
@@ -162,7 +156,7 @@ export class RedisConnection implements OnInit, OnDestroy {
   readonly clock: Clock | undefined;
   /**
    * How long the child queue's watch may go without noticing a silently dead connection, in seconds
-   * (`redisWatchLivenessSeconds`, agbossjs/agboss#789).
+   * (the driver's `timeouts.watchLiveness`, agbossjs/agboss#789).
    *
    * @internal
    */
@@ -178,13 +172,9 @@ export class RedisConnection implements OnInit, OnDestroy {
    * @param clock bounds the close at the stop (agbossjs/agboss#923); a connection built without
    *   one closes in order only.
    */
-  constructor(
-    source: ApplicationContext | RedisConnectionSettings,
-    clock?: Clock,
-    resolved?: ResolvedSettings,
-  ) {
+  constructor(source?: RedisConnectionSettings | ResolvedSettings, clock?: Clock) {
     this.clock = clock;
-    const settings = settingsOf(source, resolved);
+    const settings = settingsOf(source);
     this.#optOut = settings.durabilityOptOut;
     this.keyPrefix = settings.keyPrefix ?? DEFAULT_KEY_PREFIX;
     this.#url = settings.url;

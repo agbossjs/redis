@@ -105,16 +105,21 @@ export class Cluster {}
 `RedisDriver` is the cluster's driver: the connection and the three coordination stores, on the
 backend `redis`. The lease store's ids and marks go to the database driver's lease store (the
 container binds it under `EXECUTION_ID_STORE`). `timeouts` is `DriverTimeouts` in `Milliseconds`
-(`watchLiveness` only: Redis has no command or transaction timeout of its own). The environment's
-`redis…` fields stay for an application that names no storage component.
+(`watchLiveness` only: Redis has no command or transaction timeout of its own). The driver is the
+only source of the connection's settings (agbossjs/agboss#1324: no environment field); a script or a
+test builds one from a settings object, `new RedisConnection({ url, … })`.
 
 ## Listing the stores, and the kept execution ids
 
 `REDIS_COORDINATION_STORES` is every store of this package — the leases, the child queue, the rate
-limits — to spread into `@Application({ providers })` (agbossjs/agboss#891); `agboss describe` still
-names each one. They are **coordination only**: pair them with the durable stores of PostgreSQL or
-MongoDB that leave the coordination and fencing stores out (`POSTGRES_DURABLE_STORES`,
-`MONGODB_DURABLE_STORES`), and list no fenced-effect or outbound-call store.
+limits — and what `RedisDriver` provides beside `RedisConnection` (agbossjs/agboss#891, #1321). They
+are **coordination only**: the database storage's driver (PostgreSQL's or MongoDB's) provides the
+durable stores and the fencing ones — a fenced-effect or outbound-call store is the database's, never
+Redis's. A store class listed in `@Application({ providers })` beside a `storage` is
+`[storage.providers-conflict]`: choose it in the driver. The coordination stores and the connection
+declare `static store = { backend: "redis" }`, which is how an application assembly — and the core's
+fault suite, whose hybrid set puts the SQLite fencing stores on the database storage and these on the
+cluster's — tells them from the database's.
 
 Every execution id is kept forever by the lease store (`claimExecutionId`, #591), and so is every
 tree's **marks** (cancel, stop, pause, `requestCancel` / `isCancelRequested`, agbossjs/agboss#909, #1117, #1152, #1341): the
@@ -128,16 +133,18 @@ only: the core's `ExecutionIdStore` carries the marks and the cluster mirror (`s
 durable lease store by class — created by the container under that token only, so it is neither a
 second lease store (`[di.ambiguous-implementation]`) nor made with `new`:
 
-```ts no-check: @agboss/mongodb is no dependency of this package
-import { EXECUTION_ID_STORE, provide } from "@agboss/core";
-import { MONGODB_DURABLE_STORES, MongoConnection, MongoExecutionLeaseRepository } from "@agboss/mongodb";
-import { REDIS_COORDINATION_STORES, RedisConnection } from "@agboss/redis";
+```ts no-check: @agboss/postgres is no dependency of this package
+import { ClusterStorage, DatabaseStorage, secret } from "@agboss/core";
+import { PostgresDriver } from "@agboss/postgres";
+import { RedisDriver } from "@agboss/redis";
 
-// @Application({ …, providers: [
-//   MongoConnection, ...MONGODB_DURABLE_STORES,
-//   RedisConnection, ...REDIS_COORDINATION_STORES,
-//   provide(EXECUTION_ID_STORE, MongoExecutionLeaseRepository), // or PostgresExecutionLeaseRepository
-// ] })
+// @Application({ …, storage: { database: Database, cluster: Cluster } })
+// the lease store the database's driver provides is bound under EXECUTION_ID_STORE by the container
+@DatabaseStorage({ driver: PostgresDriver({ url: secret("POSTGRES_URL") }) })
+export class Database {}
+
+@ClusterStorage({ driver: RedisDriver({ url: secret("REDIS_URL") }) })
+export class Cluster {}
 ```
 
 ## Required server settings
@@ -160,7 +167,7 @@ redis-server --appendonly yes --appendfsync always --no-appendfsync-on-rewrite n
 ```
 
 **The durability opt-out** names the guarantee given up and accepts no other value:
-`redisDurabilityOptOut: "acknowledged-writes-may-be-lost"`. With it a server short on the four
+the driver's `durabilityOptOut: RedisDurabilityOptOut.AcknowledgedWritesMayBeLost` (`"acknowledged-writes-may-be-lost"`). With it a server short on the four
 settings starts, and `connection.durability()` reports `{ problems, optOut:
 RedisDurabilityOptOut.AcknowledgedWritesMayBeLost }`. A crash can
 then lose an acknowledged epoch, and the next take grants it again: two holders of one fencing token
@@ -219,19 +226,21 @@ say (rate-limit slots are not money, Guarantees A10).
 ## The connection
 
 ```ts
-import { Secret } from "@agboss/core";
+import { secret } from "@agboss/core";
+import { sec } from "@agboss/core/units";
+import { RedisDriver, RedisDurabilityOptOut } from "@agboss/redis";
 
-export class AppEnvironment {
-  redisUrl!: Secret; // redis://user:password@host:6379/0 — secret("REDIS_URL")
-  redisDurabilityOptOut?: string; // only "acknowledged-writes-may-be-lost"
-  redisKeyPrefix?: string; // default "agboss:" — several applications on one server
-  redisWatchLivenessSeconds?: number; // the longest a silently dead subscription goes unnoticed: 10 (default), at least 2
-}
+export const driver = RedisDriver({
+  url: secret("REDIS_URL"), // redis://user:password@host:6379/0, read once at start, never printed
+  keyPrefix: "orders:", // default "agboss:" — several applications on one server
+  durabilityOptOut: RedisDurabilityOptOut.AcknowledgedWritesMayBeLost, // only this value, or none
+  timeouts: { watchLiveness: sec(10) }, // the longest a silently dead subscription goes unnoticed: 10 s (default), at least 2 s
+});
 ```
 
 **A subscription that dies silently** (agbossjs/agboss#789) — a half-open TCP connection behind a
 NAT or a load balancer: no FIN, no RST, the wake-ups of the child queue just stop — is noticed
-within `redisWatchLivenessSeconds` (default 10 s, at least 2): the subscriber runs a `PING` every
+within the driver's `timeouts.watchLiveness` (default 10 s, at least 2 s): the subscriber runs a `PING` every
 half of it (5 s; `PING` is allowed on a subscribed connection) and the answer is due within the
 other half; node-redis keeps TCP keepalive on its socket as well. A connection that does not answer
 is destroyed, `child-queue.watch-connection-lost` is logged at `warn`, and a new subscriber
@@ -239,7 +248,7 @@ subscribes after the first pause (1 s), waking the claimers once: a child queued
 waits for neither the sweep nor the next message. The worst case is the bound, plus 1 s, plus a
 connection (a new connection that is swallowed too is dropped at the bound and tried again, 2 s
 later, doubling up to 30 s). A connection that drops loudly reconnects as before.
-The bound of a settings object (`watchLivenessSeconds`) is checked as the environment's is: a whole
+The bound of a settings object (`watchLivenessSeconds`) is checked as the driver's is: a whole
 number of at least 2, else `RedisSettingsError` at construction (agbossjs/agboss#1029).
 
 **One prefix per database.** A lease key is never deleted or expired, and a retired lease is never
@@ -248,10 +257,10 @@ durable store under `EXECUTION_ID_STORE`: a database emptied or replaced under a
 — or two applications on one Redis, each with its own database, under one prefix — hands out an id
 whose lease key already exists, and no take of it would ever succeed. The claim of such an id fails
 with `RedisLeaseKeyConflictError` (`redis.lease-key-conflict`, naming the id only): give each
-database its own `redisKeyPrefix`, or empty the keys of the discarded one. (The PostgreSQL, MongoDB
+database its own `keyPrefix`, or empty the keys of the discarded one. (The PostgreSQL, MongoDB
 and SQLite lease stores keep their ids and their leases in one database, so they cannot disagree.)
 
-`RedisConnection` (`deps: [ApplicationContext]`, or `new RedisConnection({ url })` in a script or a
+`RedisConnection` (`deps: [CLUSTER_SETTINGS, Clock]`, or `new RedisConnection({ url })` in a script or a
 test) holds one [node-redis](https://github.com/redis/node-redis) client (`@redis/client`) per
 application instance. At `onInit` it connects and runs the start checks. If the server is down, the
 start fails after five quick retries instead of hanging; once connected, a dropped connection is

@@ -11,7 +11,6 @@ import {
   SqliteFencedEffectRepository,
   SqliteOutboundCallRepository,
   SqlitePausedExecutionRepository,
-  type Secret,
 } from "@agboss/core";
 import { SqliteCheckpointSaver } from "@agboss/core/internal";
 import { SqliteConnection } from "@agboss/core/stores";
@@ -41,13 +40,6 @@ import {
 
 /** The table of the fixture's business rows. */
 const BUSINESS_ROWS = "CREATE TABLE IF NOT EXISTS fault_business_rows (row TEXT NOT NULL)";
-
-/** The environment the stores read: the scenario's file and the test's Redis. */
-export class RedisFaultEnvironment {
-  sqlitePath!: string;
-  redisUrl!: Secret;
-  redisKeyPrefix?: string;
-}
 
 /**
  * The pod's SQLite connection, kept for the fixture's charge: it writes its business row in the
@@ -84,12 +76,17 @@ export const faultStores: FaultStoreSet = {
     RedisChildExecutionQueueRepository,
     RedisRateLimitRepository,
   ],
-  environment: {
-    contract: RedisFaultEnvironment,
-    values: {
-      sqlitePath: env("AGBOSS_FAULT_DATABASE_URL"),
-      redisUrl: secret("AGBOSS_FAULT_REDIS_URL"),
-      redisKeyPrefix: env("AGBOSS_FAULT_REDIS_PREFIX"),
+  // the hybrid set (agbossjs/agboss#1324, B1b): the fencing stores on the SQLite file (the pod's
+  // `@DatabaseStorage`), the connection and the coordination stores — which declare `static store =
+  // { backend: "redis" }` — on the test's Redis (its `@ClusterStorage`, settings of `RedisDriver`'s
+  // shape); the pod resolves `env(…)` and `secret(…)` from its process env
+  storage: {
+    backend: "sqlite",
+    settings: { kind: "sqlite", path: env("AGBOSS_FAULT_DATABASE_URL") },
+    cluster: {
+      kind: "redis",
+      url: secret("AGBOSS_FAULT_REDIS_URL"),
+      keyPrefix: env("AGBOSS_FAULT_REDIS_PREFIX"),
     },
   },
   businessRows: {

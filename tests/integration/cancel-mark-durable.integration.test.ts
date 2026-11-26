@@ -51,7 +51,7 @@ describe.skipIf(DURABLE_URL === "")(
       new RedisExecutionLeaseRepository(
         connection,
         new StoreClock(StoreTimeSource.Database, { now: () => new Date() }),
-        new TestApplicationContext({}),
+        new TestApplicationContext(),
         durable,
       );
 

@@ -27,7 +27,7 @@ function scripted(reply: (run: ScriptRun) => unknown, stored: Record<string, str
   const store = new RedisChildExecutionQueueRepository(
     connection,
     new VirtualClock(new Date(5_000)),
-    new TestApplicationContext({}, "instance-1"),
+    new TestApplicationContext("instance-1"),
     new RecordingLogger(),
   );
   return { store, calls: runs };

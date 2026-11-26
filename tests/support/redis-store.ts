@@ -44,11 +44,12 @@ export class SharedKeptIds extends SqliteExecutionLeaseRepository {
 
   constructor() {
     const folder = mkdtempSync(join(tmpdir(), "agboss-redis-durable-"));
-    const application = new TestApplicationContext(
-      { sqlitePath: join(folder, "durable.sqlite") },
-      "durable",
+    const application = new TestApplicationContext("durable");
+    super(
+      new SqliteConnection({ kind: "sqlite", path: join(folder, "durable.sqlite") }),
+      new StoreClock(StoreTimeSource.Test),
+      application,
     );
-    super(new SqliteConnection(application), new StoreClock(StoreTimeSource.Test), application);
     this.#folder = folder;
   }
 

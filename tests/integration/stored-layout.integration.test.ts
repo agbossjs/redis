@@ -49,16 +49,16 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#1213: what the stores keep"
     new RedisChildExecutionQueueRepository(
       on,
       systemClock,
-      new TestApplicationContext({}),
+      new TestApplicationContext(),
       new RecordingLogger(),
     );
   const limitsOn = (on: RedisConnection) =>
-    new RedisRateLimitRepository(on, systemClock, new TestApplicationContext({}));
+    new RedisRateLimitRepository(on, systemClock, new TestApplicationContext());
   const leasesOn = (on: RedisConnection) =>
     new RedisExecutionLeaseRepository(
       on,
       new StoreClock(StoreTimeSource.Database, systemClock),
-      new TestApplicationContext({}),
+      new TestApplicationContext(),
       space.keptIds,
     );
 

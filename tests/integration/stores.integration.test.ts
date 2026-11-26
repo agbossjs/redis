@@ -52,7 +52,7 @@ describe.skipIf(DURABLE_URL === "")(
         leases: new RedisExecutionLeaseRepository(
           connection,
           decadesOffStoreClock(),
-          new TestApplicationContext({}, instanceId),
+          new TestApplicationContext(instanceId),
           space.keptIds,
         ),
       };
@@ -104,7 +104,7 @@ describe.skipIf(DURABLE_URL === "")(
       const leases = new RedisExecutionLeaseRepository(
         connection,
         decadesOffStoreClock(),
-        new TestApplicationContext({}, "instance-ping"),
+        new TestApplicationContext("instance-ping"),
         space.keptIds,
       );
       await leases.ping();
@@ -130,11 +130,7 @@ describe.skipIf(DURABLE_URL === "")(
         sleep: () => Promise.resolve(),
         monotonicNow: () => 0,
       };
-      const limits = new RedisRateLimitRepository(
-        connection,
-        clock,
-        new TestApplicationContext({}),
-      );
+      const limits = new RedisRateLimitRepository(connection, clock, new TestApplicationContext());
       await limits.acquire("provider-1", 2, seconds(10));
       await limits.addToWindow("provider-1", 3, seconds(60));
       await limits.pauseUntil("provider-1", new Date(Date.now() + 5_000));
@@ -158,7 +154,7 @@ describe.skipIf(DURABLE_URL === "")(
       const queue = new RedisChildExecutionQueueRepository(
         connection,
         clock,
-        new TestApplicationContext({}),
+        new TestApplicationContext(),
         new RecordingLogger(),
       );
       const child = (executionId: string, rootExecutionId: string): QueuedChildExecution => ({

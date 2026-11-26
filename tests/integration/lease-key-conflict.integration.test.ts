@@ -35,12 +35,7 @@ describe.skipIf(DURABLE_URL === "")("agbossjs/agboss#923: a lease key of another
     const connection = await connectionOf(space);
     space.idle.push(connection);
     const clock = new StoreClock(StoreTimeSource.Database, { now: () => new Date() });
-    return new RedisExecutionLeaseRepository(
-      connection,
-      clock,
-      new TestApplicationContext({}),
-      ids,
-    );
+    return new RedisExecutionLeaseRepository(connection, clock, new TestApplicationContext(), ids);
   };
 
   it("AC2: an id the id store hands out as new, whose lease key exists, fails — it is not taken for ever", async () => {
