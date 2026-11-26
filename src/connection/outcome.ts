@@ -1,4 +1,4 @@
-import { StoreOutcomeSource, StoreOutcomeUnknownError } from "@agboss/core/stores";
+import { isStoreOutcomeUnknown, StoreError, StoreOutcomeSource } from "@agboss/core/stores";
 import {
   ClientClosedError,
   ClientOfflineError,
@@ -16,11 +16,11 @@ import {
  *
  * The rule is a WHITELIST (the spec review of #1017): an error is "known", rethrown as it is, only
  * when it proves the command never ran; every other error after the send — and every error of a
- * shape this module does not recognise — is `StoreOutcomeUnknownError` (`source: Transport`, the
+ * shape this module does not recognise — is `StoreError.OutcomeUnknown` (`source: Transport`, the
  * driver's error as `cause`). Redis never rolls a script back, so the server's own error in the
  * middle of a script (`OOM`, a `WRONGTYPE` on a later key) may follow a write: only a reply that is
  * the server's refusal BEFORE the script ran is known. A read is never classified: it has no effect.
- * An error that already is a `StoreOutcomeUnknownError` (a command timeout) passes through.
+ * An error that already is a store call of unknown outcome (`isStoreOutcomeUnknown`: `StoreError.OutcomeUnknown`, or `StoreError.CallTimeout` of a command timeout) passes through.
  *
  * Checked against `@redis/client` 6.3.0 (`node_modules/@redis/client/dist/lib/`).
  */
@@ -115,8 +115,8 @@ export function isKnown(error: unknown): boolean {
 
 /** `error` as it is, or as the error of unknown outcome a write's failure is read as. */
 export function outcomeOf(error: unknown, operation: string): unknown {
-  if (error instanceof StoreOutcomeUnknownError || isKnown(error)) return error;
-  return new StoreOutcomeUnknownError({
+  if (isStoreOutcomeUnknown(error) || isKnown(error)) return error;
+  return new StoreError.OutcomeUnknown({
     store: STORE,
     operation,
     source: StoreOutcomeSource.Transport,

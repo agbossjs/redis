@@ -1,8 +1,4 @@
-import {
-  StoreCallTimeoutError,
-  StoreOutcomeSource,
-  StoreOutcomeUnknownError,
-} from "@agboss/core/stores";
+import { StoreError, StoreOutcomeSource } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
 import {
   AbortError,
@@ -30,7 +26,7 @@ import { RedisScript, runScript, type ScriptClient } from "../../src/connection/
 /**
  * agbossjs/agboss#1017 — which errors of a Redis write leave its outcome unknown. The rule is a
  * whitelist: only an error that proves the command never ran is known (rethrown as it is); every
- * other error after the send, and every shape not recognised, is `StoreOutcomeUnknownError`
+ * other error after the send, and every shape not recognised, is `StoreError.OutcomeUnknown`
  * (`source: Transport`, the driver's error the `cause`). A read keeps its own error. Each row
  * below is one entry of the whitelist or one error that must stay unknown.
  */
@@ -146,11 +142,11 @@ describe("outcomeOf", () => {
   });
 
   it.each(UNKNOWN)(
-    "%s: StoreOutcomeUnknownError from the transport, the error its cause",
+    "%s: StoreError.OutcomeUnknown from the transport, the error its cause",
     (_name, make) => {
       const error = make();
       const unknown = outcomeOf(error, "EVALSHA x");
-      expect(unknown).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(unknown).toBeInstanceOf(StoreError.OutcomeUnknown);
       expect(unknown).toMatchObject({
         code: "store.outcome-unknown",
         store: "RedisConnection",
@@ -162,13 +158,13 @@ describe("outcomeOf", () => {
   );
 
   it("an error that already is of unknown outcome (a command timeout) passes through", () => {
-    const timeout = new StoreCallTimeoutError({
+    const timeout = new StoreError.CallTimeout({
       store: "RedisConnection",
       operation: "EVALSHA x",
       timeout: 5 as Milliseconds,
       source: StoreOutcomeSource.Command,
     });
-    const unknown = new StoreOutcomeUnknownError({
+    const unknown = new StoreError.OutcomeUnknown({
       store: "S",
       operation: "o",
       source: StoreOutcomeSource.Framework,
@@ -266,7 +262,9 @@ describe("runScript: a write script is classified, a read script is not", () => 
         return Promise.reject(new SocketClosedUnexpectedlyError());
       },
     };
-    await expect(runScript(client, write, [], [])).rejects.toBeInstanceOf(StoreOutcomeUnknownError);
+    await expect(runScript(client, write, [], [])).rejects.toBeInstanceOf(
+      StoreError.OutcomeUnknown,
+    );
     expect(calls).toEqual(["evalSha", "eval"]);
   });
 

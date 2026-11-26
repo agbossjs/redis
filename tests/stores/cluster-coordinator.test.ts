@@ -3,7 +3,7 @@ import { InterruptMode } from "@agboss/core";
 import {
   ClusterExecutionLeaseRepository,
   ClusterLeaseSyncOutcome,
-  StoreOutcomeUnknownError,
+  StoreError,
 } from "@agboss/core/stores";
 import { seconds } from "@agboss/core/units";
 import { afterEach, describe, expect, it } from "vitest";
@@ -242,7 +242,7 @@ describe("the lease store on Redis beside the database's row (D6)", () => {
 
     // a write script that fails after the send is of unknown outcome (#1017): a repeat pushes again
     await expect(store.requestStop(TREE, InterruptMode.Immediate)).rejects.toBeInstanceOf(
-      StoreOutcomeUnknownError,
+      StoreError.OutcomeUnknown,
     );
 
     expect(await store.stopOf(TREE)).toEqual({ mode: InterruptMode.Immediate });

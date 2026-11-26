@@ -1,7 +1,7 @@
-import { StoreOutcomeUnknownError } from "@agboss/core/stores";
 import { SimpleError } from "@redis/client";
 import { describe, expect, it } from "vitest";
 import { keyOf, RedisScript, runScript, type ScriptClient } from "../../src/connection/scripts.js";
+import { StoreError } from "@agboss/core/stores";
 
 /**
  * agbossjs/agboss#693 — how a store runs its scripts: `EVALSHA` first; on `NOSCRIPT` (a restart or a
@@ -65,7 +65,7 @@ describe("runScript", () => {
       async () => 2,
     );
     await expect(runScript(client, script, [], [])).rejects.toBeInstanceOf(
-      StoreOutcomeUnknownError,
+      StoreError.OutcomeUnknown,
     );
     expect(calls).toEqual(["evalSha"]);
   });

@@ -9,6 +9,14 @@ const INTERNAL = {
   message:
     "Import only @agboss/core's public entries; when a seam is missing, report it on the issue.",
 };
+/**
+ * The fault fixture alone may take `@agboss/core/internal` (`SqliteCheckpointSaver`, which no public
+ * entry exports): the DSL-Review answer of 2026-11-25 (agbossjs/agboss#1324). `src/` stays banned.
+ */
+const INTERNAL_FOR_FAULTS = {
+  regex: "^@agboss/(core|cli)/(dist|src)(/|$)",
+  message: "Only @agboss/core/internal, and only for tests/faults: never the core's dist or src.",
+};
 /** The published code never loads the core's test kit (a user's install has no vitest). */
 const TESTING = {
   regex: "^@agboss/core/testing(/|$)",
@@ -71,6 +79,10 @@ export default tseslint.config(
   {
     files: ["tests/**/*.ts"],
     rules: { "no-restricted-imports": ["error", { patterns: [INTERNAL] }] },
+  },
+  {
+    files: ["tests/faults/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: [INTERNAL_FOR_FAULTS] }] },
   },
   ...testRules,
   {

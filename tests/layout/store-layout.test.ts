@@ -10,11 +10,11 @@
 import {
   createApp,
   ExecutionLeaseRepository,
-  GraphRuleError,
   SqliteExecutionLeaseRepository,
   SqliteFencedEffectRepository,
   SqliteOutboundCallRepository,
   type Provider,
+  ConfigError,
 } from "@agboss/core";
 import { SqliteConnection } from "@agboss/core/stores";
 import { beforeAll, describe, expect, expectTypeOf, it } from "vitest";
@@ -45,8 +45,8 @@ async function backendViolationsOf(providers: readonly Provider[]): Promise<read
     (thrown: unknown) => thrown,
   );
   if (error === undefined) return [];
-  if (error instanceof Error && !(error instanceof GraphRuleError)) throw error;
-  if (!(error instanceof GraphRuleError)) throw new Error("the assembly threw a non-error");
+  if (error instanceof Error && !(error instanceof ConfigError.GraphRules)) throw error;
+  if (!(error instanceof ConfigError.GraphRules)) throw new Error("the assembly threw a non-error");
   return error.violations
     .filter((found) => found.code.startsWith("application.store-backend"))
     .map((found) => `[${found.code}] ${found.message}`);

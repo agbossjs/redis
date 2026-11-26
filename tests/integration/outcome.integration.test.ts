@@ -9,7 +9,7 @@
  * user before the script runs.
  */
 import { randomUUID } from "node:crypto";
-import { StoreOutcomeSource, StoreOutcomeUnknownError } from "@agboss/core/stores";
+import { isStoreOutcomeUnknown, StoreError, StoreOutcomeSource } from "@agboss/core/stores";
 import { seconds } from "@agboss/core/units";
 import { ClientClosedError, ClientOfflineError, createClient, ErrorReply } from "@redis/client";
 import { ExecutionRecordStatus, StoreClock, StoreTimeSource } from "@agboss/core";
@@ -109,7 +109,7 @@ describe.skipIf(DURABLE_URL === "")(
         (caught: unknown) => caught,
       );
 
-      expect(error).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(error).toBeInstanceOf(StoreError.OutcomeUnknown);
       expect(error).toMatchObject({
         code: "store.outcome-unknown",
         source: StoreOutcomeSource.Transport,
@@ -134,7 +134,7 @@ describe.skipIf(DURABLE_URL === "")(
         .acquire("default", "lost-answer-1", seconds(30))
         .catch((caught: unknown) => caught);
 
-      expect(error).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(error).toBeInstanceOf(StoreError.OutcomeUnknown);
       await applied(async () => direct.exists(`${PREFIX}lease:["default","lost-answer-1"]`), 1);
     });
 
@@ -148,7 +148,7 @@ describe.skipIf(DURABLE_URL === "")(
       proxy.drop();
 
       // the client cannot tell this from a lost answer: the wrongly unknown costs one takeover
-      expect(await call).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(await call).toBeInstanceOf(StoreError.OutcomeUnknown);
       expect(await direct.exists(key("never-arrived"))).toBe(0);
       proxy.reconnect();
     });
@@ -184,7 +184,7 @@ describe.skipIf(DURABLE_URL === "")(
       );
 
       expect(error).toBeInstanceOf(ClientClosedError);
-      expect(error).not.toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(isStoreOutcomeUnknown(error)).toBe(false);
     });
 
     it("a command on an offline client without an offline queue never left: ClientOfflineError, known", async () => {
@@ -227,7 +227,7 @@ describe.skipIf(DURABLE_URL === "")(
         ["1"],
       ).catch((caught: unknown) => caught);
 
-      expect(error).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(error).toBeInstanceOf(StoreError.OutcomeUnknown);
       expect(error).toHaveProperty("cause.message", expect.stringContaining("WRONGTYPE"));
       expect(error).toHaveProperty("cause.message", expect.stringContaining("@user_script"));
       expect(await direct.get(key("before-the-error"))).toBe("1");
@@ -248,7 +248,7 @@ describe.skipIf(DURABLE_URL === "")(
         );
 
         expect(error).toBeInstanceOf(ErrorReply);
-        expect(error).not.toBeInstanceOf(StoreOutcomeUnknownError);
+        expect(isStoreOutcomeUnknown(error)).toBe(false);
         expect(error).toHaveProperty("message", expect.stringMatching(/^NOPERM /u));
         expect(await direct.exists(key("denied"))).toBe(0);
       } finally {
@@ -268,7 +268,7 @@ describe.skipIf(DURABLE_URL === "")(
       );
 
       expect(error).toBeInstanceOf(Error);
-      expect(error).not.toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(isStoreOutcomeUnknown(error)).toBe(false);
     });
 
     const clock = { now: () => new Date(), sleep: () => Promise.resolve(), monotonicNow: () => 0 };
@@ -320,7 +320,7 @@ describe.skipIf(DURABLE_URL === "")(
       expect(saved).toMatchObject({ code: "store.outcome-unknown", store: "RedisConnection" });
       await applied(async () => direct.exists(`${PREFIX}child:["default","outcome-child"]`), 1);
       expect(depth).toBeInstanceOf(Error);
-      expect(depth).not.toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(isStoreOutcomeUnknown(depth)).toBe(false);
     });
   },
 );

@@ -175,7 +175,7 @@ them matters; a child's row goes when its tree ends.
 A Redis write whose answer never came back may still have been applied: a script runs to its end on
 the server (and is never rolled back) even when the connection dies while it runs. Every write of
 the stores — each script that changes a key, and the rate limits' direct `ZREM` and `DEL` — that
-fails after it was sent therefore rejects with `StoreOutcomeUnknownError` (`store.outcome-unknown`,
+fails after it was sent therefore rejects with `StoreError.OutcomeUnknown` (`store.outcome-unknown`,
 `source: Transport`, the driver's error as `cause`). The framework never takes such a call as done
 and never as not done: under a lease it hands the tree over, and the next holder reconciles
 (agbossjs/agboss#1017). A read (the depth script, `GET`, `HGETALL`, `EXISTS`) keeps the driver's
