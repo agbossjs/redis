@@ -90,3 +90,54 @@ describe("RedisConnection's settings and its subscribers", () => {
     expect(destroy).not.toHaveBeenCalled();
   });
 });
+
+describe("RedisConnection.onAbandon (agbossjs/agboss#954, #1432)", () => {
+  it("destroys the main client and every subscriber still up at once, and hands out no other", () => {
+    const connection = new RedisConnection({ url: URL });
+    const subscriber = connection.subscriber();
+    const ended = connection.subscriber();
+    const destroySubscriber = vi.spyOn(subscriber, "destroy");
+    const destroyEnded = vi.spyOn(ended, "destroy");
+    const destroyMain = vi.spyOn(connection.native, "destroy");
+    ended.emit("end");
+
+    connection.onAbandon();
+
+    expect(destroyMain).toHaveBeenCalledTimes(1);
+    expect(destroySubscriber).toHaveBeenCalledTimes(1);
+    expect(destroyEnded).not.toHaveBeenCalled();
+    expect(() => connection.subscriber()).toThrow(RedisConnectionClosedError);
+  });
+
+  it("destroys the socket of an onDestroy the stop gave up on: its orderly close never answered", async () => {
+    const connection = new RedisConnection({ url: URL });
+    vi.spyOn(connection.native, "close").mockReturnValue(new Promise(() => undefined));
+    const destroyMain = vi.spyOn(connection.native, "destroy");
+
+    const stopping = connection.onDestroy();
+    stopping.catch(() => undefined);
+    expect(destroyMain).not.toHaveBeenCalled();
+
+    connection.onAbandon();
+
+    expect(destroyMain).toHaveBeenCalledTimes(1);
+  });
+
+  it("never throws: a client that refuses to be destroyed, or one already closed, is left as it is", () => {
+    const connection = new RedisConnection({ url: URL });
+    const subscriber = connection.subscriber();
+    vi.spyOn(subscriber, "destroy").mockImplementation(() => {
+      throw new Error("already closed");
+    });
+    vi.spyOn(connection.native, "destroy").mockImplementation(() => {
+      throw new Error("already closed");
+    });
+
+    expect(() => {
+      connection.onAbandon();
+    }).not.toThrow();
+    expect(() => {
+      connection.onAbandon();
+    }).not.toThrow();
+  });
+});
