@@ -14,10 +14,12 @@ import { Clock } from '@agboss/core';
 import { ClusterDriver } from '@agboss/core/stores';
 import { ClusterExecutionLeaseRepository } from '@agboss/core/stores';
 import { DriverTimeouts } from '@agboss/core/stores';
+import type { EnvRef } from '@agboss/core';
 import { ExecutionIdentity } from '@agboss/core';
 import { ExecutionIdStore } from '@agboss/core';
 import { Logger } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
+import { OnAbandon } from '@agboss/core/stores';
 import { OnDestroy } from '@agboss/core';
 import { OnInit } from '@agboss/core';
 import { QueuedChildExecution } from '@agboss/core';
@@ -83,11 +85,12 @@ export interface RedisClient {
 }
 
 // @public
-export class RedisConnection implements OnInit, OnDestroy {
+export class RedisConnection implements OnInit, OnDestroy, OnAbandon {
     constructor(source?: RedisConnectionSettings | ResolvedSettings, clock?: Clock);
     readonly client: RedisClient;
     durability(): Promise<RedisDurability>;
     readonly keyPrefix: string;
+    onAbandon(): void;
     onDestroy(): Promise<void>;
     onInit(): Promise<void>;
     ping(): Promise<void>;
@@ -123,7 +126,7 @@ export function RedisDriver(options: RedisDriverOptions): ClusterDriver;
 // @public
 export interface RedisDriverOptions {
     readonly durabilityOptOut?: RedisDurabilityOptOut;
-    readonly keyPrefix?: string;
+    readonly keyPrefix?: string | EnvRef<string>;
     readonly timeouts?: RedisDriverTimeouts;
     readonly url: SecretRef;
 }

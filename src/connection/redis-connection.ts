@@ -1,5 +1,5 @@
 import { Clock, Injectable, type OnDestroy, type OnInit, type StoreDescriptor } from "@agboss/core";
-import { CLUSTER_SETTINGS, type ResolvedSettings } from "@agboss/core/stores";
+import { CLUSTER_SETTINGS, type OnAbandon, type ResolvedSettings } from "@agboss/core/stores";
 import { createClient } from "@redis/client";
 import type { NodeRedisClient, RedisClient } from "./redis-client.js";
 import { closeBounded, destroyed } from "./close-bounded.js";
@@ -130,7 +130,7 @@ function settingsOf(
  * the child queue); fenced effects and outbound calls stay on a durable store (agbossjs/agboss#526).
  */
 @Injectable({ deps: [CLUSTER_SETTINGS, Clock] })
-export class RedisConnection implements OnInit, OnDestroy {
+export class RedisConnection implements OnInit, OnDestroy, OnAbandon {
   /**
    * Its own backend: the connection a `@ClusterStorage` of `RedisDriver` makes, reading the cluster's
    * settings (`CLUSTER_SETTINGS`); a fault set's pod puts it, with the Redis stores, on that storage.
@@ -274,5 +274,18 @@ export class RedisConnection implements OnInit, OnDestroy {
     this.#closed.abort();
     for (const subscriber of [...this.#subscribers]) destroyed(subscriber);
     await closeBounded(this.native, this.clock);
+  }
+
+  /**
+   * The stop's last resort (agbossjs/agboss#954, #1432): its end passed with `onDestroy` still
+   * running — a quiet server never answered the `QUIT` — and the stop gave that hook up and returns.
+   * Called once, synchronously: no subscriber is handed out any more, every socket this connection
+   * opened (the subscribers, the main client's) is destroyed now, so none is open when the stop
+   * returns. Never throws (the core drops a throw anyway); a socket already closed is left as it is.
+   */
+  onAbandon(): void {
+    this.#closed.abort();
+    for (const subscriber of [...this.#subscribers]) destroyed(subscriber);
+    destroyed(this.native);
   }
 }

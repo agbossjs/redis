@@ -1,4 +1,5 @@
 import { ChildPlacement, ExecutionRecordStatus, type QueuedChildExecution } from "@agboss/core";
+import { assertValidInstant } from "@agboss/core/stores";
 import { z } from "zod";
 import { keyOf } from "../../connection/scripts.js";
 import { QUEUED_AT_DIGITS } from "./queue-scripts.js";
@@ -98,3 +99,21 @@ export const queueKeysOf = (prefix: string): QueueKeys => ({
   tree: (tree) => keyOf(prefix, "children-of", tree.tenantId, tree.rootExecutionId),
   channel: `${prefix}child-queued`,
 });
+
+/**
+ * The times a save writes, as texts: the row's `queuedAt` (ms), the queue member's time part and the
+ * claim (ms, or none). An Invalid Date would be "NaN" in all three, so it is refused
+ * (`StoreError.UnreadableRecord`) before anything is sent.
+ */
+export const savedTimesOf = (
+  child: Pick<QueuedChildExecution, "queuedAt" | "claimedAt">,
+): { readonly queuedAt: string; readonly member: string; readonly claimedAt: string } => {
+  assertValidInstant(child.queuedAt, "queuedAt", "queued child");
+  assertValidInstant(child.claimedAt, "claimedAt", "queued child");
+  return {
+    queuedAt: String(child.queuedAt.getTime()),
+    member: queuedAtText(child.queuedAt),
+    // Stryker disable next-line StringLiteral: a stored claim is a number; any other text is none
+    claimedAt: child.claimedAt === undefined ? "" : String(child.claimedAt.getTime()),
+  };
+};

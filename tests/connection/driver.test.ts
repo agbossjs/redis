@@ -1,4 +1,4 @@
-import { secret } from "@agboss/core";
+import { env, secret } from "@agboss/core";
 import { StorageRole } from "@agboss/core/stores";
 import { sec } from "@agboss/core/units";
 import { describe, expect, expectTypeOf, it } from "vitest";
@@ -12,6 +12,8 @@ import {
 } from "../../src/index.js";
 import { settingsOfResolved } from "../../src/connection/driver-settings.js";
 import type { NodeRedisClient } from "../../src/connection/redis-client.js";
+import { queueKeysOf } from "../../src/stores/queue/queue-rows.js";
+import { leaseKeyOf } from "../../src/stores/leases/redis-cluster-coordinator.js";
 import { revealing } from "../support/application-context.js";
 
 /**
@@ -54,6 +56,33 @@ describe("RedisDriver", () => {
   });
 });
 
+describe("RedisDriver key prefix from the environment", () => {
+  it("takes env(…) like the url's secret: described by its variable, carried as the reference, a name as it is", () => {
+    const driver = RedisDriver({ url: secret("REDIS_URL"), keyPrefix: env("REDIS_KEY_PREFIX") });
+
+    expect(driver.describes).toBe("redis (key prefix from REDIS_KEY_PREFIX)");
+    expect(driver.settings).toMatchObject({ kind: "redis", keyPrefix: env("REDIS_KEY_PREFIX") });
+    expect(RedisDriver({ url: secret("REDIS_URL"), keyPrefix: "app:" }).describes).toBe("redis");
+  });
+
+  it("is the name the core resolved at start that the connection builds its keys from", () => {
+    const connection = new RedisConnection(settingsOfResolved(resolved({ keyPrefix: "billing:" })));
+
+    expect(connection.keyPrefix).toBe("billing:");
+    expect(leaseKeyOf(connection.keyPrefix, "t", "e")).toBe(
+      `billing:lease:${JSON.stringify(["t", "e"])}`,
+    );
+    expect(queueKeysOf(connection.keyPrefix).byTime).toBe("billing:children-queued-by-time");
+  });
+
+  it("is refused when the environment gave an empty or unresolved one", () => {
+    expect(() => settingsOfResolved(resolved({ keyPrefix: "" }))).toThrow(/keyPrefix is empty/);
+    expect(() => settingsOfResolved(resolved({ keyPrefix: env("REDIS_KEY_PREFIX") }))).toThrow(
+      RedisSettingsError,
+    );
+  });
+});
+
 describe("the settings a driver resolved", () => {
   it("are the connection's: the revealed URL, the prefix, the opt-out, the liveness in whole seconds", () => {
     expect(
@@ -85,6 +114,22 @@ describe("the settings a driver resolved", () => {
     expect(() => settingsOfResolved(resolved(more))).toThrow(message);
   });
 
+  it.each([
+    ["null", null],
+    ["a number", 7],
+    ["an empty object", {}],
+    ["an object whose reveal is no function", { reveal: "x" }],
+  ])("a url that is %s is a RedisSettingsError, not a crash of the check", (_, url) => {
+    expect(() => settingsOfResolved({ kind: "redis", url })).toThrow(RedisSettingsError);
+    expect(() => settingsOfResolved({ kind: "redis", url })).toThrow(/url must be a secret/);
+  });
+
+  it("tells every wrong setting, one after the other with a semicolon", () => {
+    expect(() =>
+      settingsOfResolved({ kind: "redis", url: URL, keyPrefix: "", durabilityOptOut: "yes" }),
+    ).toThrow(/keyPrefix is empty: leave it unset for agboss:; durabilityOptOut must be exactly/);
+  });
+
   it("another driver's settings are refused", () => {
     expect(() => settingsOfResolved({ kind: "postgres", url: revealing(URL) })).toThrow(
       RedisSettingsError,
@@ -96,6 +141,14 @@ describe("the settings a driver resolved", () => {
 
     expect(connection.keyPrefix).toBe("app:");
     expect(connection.watchLivenessSeconds).toBe(30);
+  });
+});
+
+describe("the stores' descriptors", () => {
+  it("each store the driver brings is on the backend redis: what puts it on a @ClusterStorage", () => {
+    for (const store of [RedisConnection, ...REDIS_COORDINATION_STORES]) {
+      expect(store).toHaveProperty("store", { backend: "redis" });
+    }
   });
 });
 

@@ -98,6 +98,18 @@ describe("the cluster's lease on Redis: the coordinator", () => {
     ]);
   });
 
+  it("the marks are signalled on the channel `<prefix>lease-marks`, spelled out: the one a subscriber of another instance listens on", async () => {
+    const { connection, calls } = scripted(() => 1);
+
+    await new RedisClusterCoordinator(connection, CLOCK, application("a")).publishMarks(TREE, {
+      isCancelRequested: true,
+    });
+
+    expect(marksChannelOf("app:")).toBe("app:lease-marks");
+    expect(marksChannelOf("")).toBe("lease-marks");
+    expect(calls[0]?.args[5]).toBe("t:lease-marks");
+  });
+
   it("a take names its previous holder only for a lease that expired unreleased", async () => {
     const replies: unknown[] = [[3, 31_000, 30_000], [4, 61_000, 30_000, "b", 3], null];
     const { connection } = scripted(() => replies.shift());

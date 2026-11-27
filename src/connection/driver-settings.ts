@@ -17,7 +17,7 @@ const Revealing = z.custom<{ reveal(): string }>(
     value !== null &&
     "reveal" in value &&
     typeof value.reveal === "function",
-  { message: "the driver's url must be a secret(…)" },
+  { error: "the driver's url must be a secret(…)" },
 );
 
 const Resolved = z.object({
@@ -25,11 +25,11 @@ const Resolved = z.object({
   url: Revealing,
   keyPrefix: z
     .string()
-    .min(1, { message: "keyPrefix is empty: leave it unset for agboss:" })
+    .min(1, { error: "keyPrefix is empty: leave it unset for agboss:" })
     .optional(),
   durabilityOptOut: z
     .enum(RedisDurabilityOptOut, {
-      message: `durabilityOptOut must be exactly "${RedisDurabilityOptOut.AcknowledgedWritesMayBeLost}": the opt-out names the guarantee it gives up`,
+      error: `durabilityOptOut must be exactly "${RedisDurabilityOptOut.AcknowledgedWritesMayBeLost}": the opt-out names the guarantee it gives up`,
     })
     .optional(),
   watchLiveness: z.number().optional(),

@@ -232,7 +232,7 @@ import { RedisDriver, RedisDurabilityOptOut } from "@agboss/redis";
 
 export const driver = RedisDriver({
   url: secret("REDIS_URL"), // redis://user:password@host:6379/0, read once at start, never printed
-  keyPrefix: "orders:", // default "agboss:" — several applications on one server
+  keyPrefix: "orders:", // default "agboss:" — several applications on one server; or env("REDIS_KEY_PREFIX"), read once at start
   durabilityOptOut: RedisDurabilityOptOut.AcknowledgedWritesMayBeLost, // only this value, or none
   timeouts: { watchLiveness: sec(10) }, // the longest a silently dead subscription goes unnoticed: 10 s (default), at least 2 s
 });

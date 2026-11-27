@@ -57,8 +57,8 @@ export const SHARDS = {
     ],
     tests: [
       "tests/contracts/store-conformance.test.ts",
-      "tests/connection/watch-liveness-settings.test.ts",
-      "tests/stores/{queue-watch,queue-watch-liveness,child-queue-placement}.test.ts",
+      "tests/connection/{watch-liveness-settings,driver}.test.ts",
+      "tests/stores/{queue-watch,queue-watch-liveness,child-queue-placement,instants-refused}.test.ts",
       "tests/integration/{stores,stored-layout,queue-watch,queue-watch-silent-death,outcome}.integration.test.ts",
     ],
   },

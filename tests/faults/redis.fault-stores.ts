@@ -100,7 +100,15 @@ export const faultStores: FaultStoreSet = {
     },
     committed: (app) => {
       const { database } = app.resolve(SqliteConnection);
-      database.exec(BUSINESS_ROWS);
+      // a read only, as the core's own set does: creating the table here would take the file's write
+      // lock, which another pod's open transaction holds (`busy_timeout` is 0: "database is locked")
+      // — no charge, no table yet
+      const table = database
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fault_business_rows'",
+        )
+        .get();
+      if (table === undefined) return Promise.resolve([]);
       const rows = database.prepare("SELECT row FROM fault_business_rows ORDER BY rowid").all();
       return Promise.resolve(rows.map((found) => String(found.row)));
     },

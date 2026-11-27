@@ -30,8 +30,8 @@ import {
   fieldsOf,
   queueKeysOf,
   queuedAtOf,
-  queuedAtText,
   rowsOf,
+  savedTimesOf,
   type QueueKeys,
 } from "./queue/queue-rows.js";
 import { LivenessWatch } from "./queue/queue-watch-liveness.js";
@@ -69,12 +69,13 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
 
   async saveIfAbsent(child: QueuedChildExecution): Promise<boolean> {
     const id = JSON.stringify([child.tenantId, child.executionId]);
+    const { queuedAt, member, claimedAt } = savedTimesOf(child);
     const fields = {
       ...{ tenantId: child.tenantId, executionId: child.executionId },
       ...{ rootExecutionId: child.rootExecutionId, parentExecutionId: child.parentExecutionId },
       ...{ rootWorkflow: child.rootWorkflow, workflow: child.workflow },
       ...{ depth: String(child.depth), status: ExecutionRecordStatus.Queued, run: child.run },
-      queuedAt: String(child.queuedAt.getTime()),
+      queuedAt,
       ...(child.placement === undefined ? {} : { placement: child.placement }),
       ...(child.excludeInstanceId === undefined
         ? {}
@@ -90,9 +91,7 @@ export class RedisChildExecutionQueueRepository extends ChildExecutionQueueRepos
         this.#keys.queue(!isIsolated),
       ],
       [
-        ...[id, `${queuedAtText(child.queuedAt)}${id}`, String(-child.depth)],
-        // Stryker disable next-line StringLiteral: a stored claim is a number; any other text is none
-        child.claimedAt === undefined ? "" : String(child.claimedAt.getTime()),
+        ...[id, `${member}${id}`, String(-child.depth), claimedAt],
         this.#keys.channel,
         ...Object.entries(fields).flat(),
       ],
