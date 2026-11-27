@@ -7,7 +7,7 @@ import {
   type RateLimitLease,
   type StoreDescriptor,
 } from "@agboss/core";
-import { assertValidInstant } from "@agboss/core/stores";
+import { assertValidInstant, StoreError } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
 import { RedisConnection } from "../connection/redis-connection.js";
@@ -117,8 +117,13 @@ export class RedisRateLimitRepository extends RateLimitRepository {
   }
 
   async pausedUntil(key: string): Promise<Date | undefined> {
-    // no pause key reads as 0 ms: an instant long past
-    const until = Number((await this.connection.client.get(this.#key("pause", key))) ?? 0);
+    const stored = await this.connection.client.get(this.#key("pause", key));
+    // no pause key: not paused. A value that is no whole number of ms is not "not paused" (a payment
+    // chain would go on past a pause it cannot read): loud, the field named, the value never
+    if (stored === null) return undefined;
+    if (!/^-?\d+$/u.test(stored))
+      throw new StoreError.UnreadableRecord({ record: "rate-limit pause", fields: "until" });
+    const until = Number(stored);
     return until > this.clock.now().getTime() ? new Date(until) : undefined;
   }
 

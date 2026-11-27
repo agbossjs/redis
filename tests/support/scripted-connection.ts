@@ -17,6 +17,8 @@ export function scriptedConnection(
   options: {
     keyPrefix?: string;
     exists?: number;
+    /** What `GET` answers by key (absent: null). */
+    values?: Record<string, string>;
     stored?: Record<string, string>;
     /** The scripts' names by their SHA-1. */
     names?: ReadonlyMap<string, string>;
@@ -33,7 +35,7 @@ export function scriptedConnection(
     eval: refused,
     ping: () => Promise.resolve("PONG"),
     exists: () => Promise.resolve(options.exists ?? 0),
-    get: () => Promise.resolve(null),
+    get: (key) => Promise.resolve(options.values?.[key] ?? null),
     hGetAll: () => Promise.resolve(options.stored ?? {}),
     zRem: refused,
     del: refused,

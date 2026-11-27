@@ -67,3 +67,33 @@ describe("an Invalid Date a Redis store is handed", () => {
     },
   );
 });
+
+describe("a stored rate-limit pause", () => {
+  const limitsOf = (values: Record<string, string>) => {
+    const { connection } = scriptedConnection(() => 1, { keyPrefix: "p:", values });
+    return new RedisRateLimitRepository(
+      connection,
+      new VirtualClock(new Date(5_000)),
+      new TestApplicationContext(),
+    );
+  };
+  const KEY = `p:rate-limit-pause:${JSON.stringify(["provider"])}`;
+
+  it.each(["", "abc", "NaN", "12.5", "1e3", "2026-01-05T09:00:00.000Z", " 9000"])(
+    "that is no whole number of ms (%j) is UnreadableRecord naming the field, never read as not paused",
+    async (stored) => {
+      const limits = limitsOf({ [KEY]: stored });
+
+      await expect(limits.pausedUntil("provider")).rejects.toThrow(StoreError.UnreadableRecord);
+      await expect(limits.pausedUntil("provider")).rejects.toThrow(/until/);
+    },
+  );
+
+  it("that is a number reads as its end while ahead, as not paused once past, and none as not paused", async () => {
+    await expect(limitsOf({ [KEY]: "9000" }).pausedUntil("provider")).resolves.toEqual(
+      new Date(9000),
+    );
+    await expect(limitsOf({ [KEY]: "5000" }).pausedUntil("provider")).resolves.toBeUndefined();
+    await expect(limitsOf({}).pausedUntil("provider")).resolves.toBeUndefined();
+  });
+});
