@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { RedisChildExecutionQueueRepository } from "../../src/index.js";
 import {
   CLAIM_ISOLATED,
+  DELETE_TREE,
   QUEUED_ISOLATED,
   SAVE,
   WITHDRAW,
@@ -50,6 +51,21 @@ const ROW = {
 };
 
 describe("a queued child's placement on Redis", () => {
+  it("a tree's delete names both queues, the general one and the isolated one's, and the isolated listing is a read script", async () => {
+    const { store, calls } = scripted(() => 0);
+
+    await store.deleteAllByTenantIdAndRootExecutionId("default", "root-1");
+
+    expect(calls[0]?.script).toBe(DELETE_TREE.sha);
+    expect(calls[0]?.keys.slice(1)).toEqual([
+      `${PREFIX}children-queued`,
+      `${PREFIX}children-queued-by-time`,
+      `${PREFIX}children-running`,
+      `${PREFIX}children-queued-isolated`,
+    ]);
+    expect(QUEUED_ISOLATED.readOnly).toBe(true);
+  });
+
   it("an isolated worker's child is queued on the queue of its own, the general one named last", async () => {
     const { store, calls } = scripted(() => 1);
 
@@ -117,6 +133,12 @@ describe("a queued child's placement on Redis", () => {
     expect(refused).toBeUndefined();
     expect(calls[0]?.script).toBe(CLAIM_ISOLATED.sha);
     expect(calls[0]?.args).toEqual(["instance-1", "5000"]);
+    expect(calls[0]?.keys).toEqual([
+      `${PREFIX}child:${JSON.stringify(["default", "child-1"])}`,
+      `${PREFIX}children-queued-isolated`,
+      `${PREFIX}children-queued-by-time`,
+      `${PREFIX}children-running`,
+    ]);
   });
 
   it("withdraws a child that is queued: its row, both queues and its tree's set in one script", async () => {

@@ -34,7 +34,13 @@ describe("an Invalid Date a Redis store is handed", () => {
     await expect(limits.pauseUntil("provider", INVALID)).rejects.toThrow(
       StoreError.UnreadableRecord,
     );
-    await expect(limits.pauseUntil("provider", INVALID)).rejects.toThrow(/until/);
+    await expect(limits.pauseUntil("provider", INVALID)).rejects.toMatchObject({
+      record: "rate-limit pause",
+      fields: "until",
+    });
+    await expect(limits.pauseUntil("provider", INVALID)).rejects.toMatchObject({
+      record: "rate-limit pause",
+    });
     expect(runs).toEqual([]);
 
     await limits.pauseUntil("provider", VALID);
@@ -58,7 +64,10 @@ describe("an Invalid Date a Redis store is handed", () => {
       );
 
       await expect(queue.saveIfAbsent(childOf(extra))).rejects.toThrow(StoreError.UnreadableRecord);
-      await expect(queue.saveIfAbsent(childOf(extra))).rejects.toThrow(new RegExp(field));
+      await expect(queue.saveIfAbsent(childOf(extra))).rejects.toMatchObject({
+        record: "queued child",
+        fields: field,
+      });
       expect(runs).toEqual([]);
 
       await expect(queue.saveIfAbsent(childOf({ claimedAt: VALID }))).resolves.toBe(true);
@@ -85,7 +94,10 @@ describe("a stored rate-limit pause", () => {
       const limits = limitsOf({ [KEY]: stored });
 
       await expect(limits.pausedUntil("provider")).rejects.toThrow(StoreError.UnreadableRecord);
-      await expect(limits.pausedUntil("provider")).rejects.toThrow(/until/);
+      await expect(limits.pausedUntil("provider")).rejects.toMatchObject({
+        record: "rate-limit pause",
+        fields: "until",
+      });
     },
   );
 

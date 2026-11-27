@@ -114,6 +114,22 @@ describe("the settings a driver resolved", () => {
     expect(() => settingsOfResolved(resolved(more))).toThrow(message);
   });
 
+  it.each([
+    ["null", null],
+    ["a number", 7],
+    ["an empty object", {}],
+    ["an object whose reveal is no function", { reveal: "x" }],
+  ])("a url that is %s is a RedisSettingsError, not a crash of the check", (_, url) => {
+    expect(() => settingsOfResolved({ kind: "redis", url })).toThrow(RedisSettingsError);
+    expect(() => settingsOfResolved({ kind: "redis", url })).toThrow(/url must be a secret/);
+  });
+
+  it("tells every wrong setting, one after the other with a semicolon", () => {
+    expect(() =>
+      settingsOfResolved({ kind: "redis", url: URL, keyPrefix: "", durabilityOptOut: "yes" }),
+    ).toThrow(/keyPrefix is empty: leave it unset for agboss:; durabilityOptOut must be exactly/);
+  });
+
   it("another driver's settings are refused", () => {
     expect(() => settingsOfResolved({ kind: "postgres", url: revealing(URL) })).toThrow(
       RedisSettingsError,
@@ -125,6 +141,14 @@ describe("the settings a driver resolved", () => {
 
     expect(connection.keyPrefix).toBe("app:");
     expect(connection.watchLivenessSeconds).toBe(30);
+  });
+});
+
+describe("the stores' descriptors", () => {
+  it("each store the driver brings is on the backend redis: what puts it on a @ClusterStorage", () => {
+    for (const store of [RedisConnection, ...REDIS_COORDINATION_STORES]) {
+      expect(store).toHaveProperty("store", { backend: "redis" });
+    }
   });
 });
 
