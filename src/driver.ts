@@ -1,4 +1,4 @@
-import type { SecretRef } from "@agboss/core";
+import type { EnvRef, SecretRef } from "@agboss/core";
 import {
   defineStorageDriver,
   StorageRole,
@@ -17,12 +17,20 @@ export type RedisDriverTimeouts = Pick<DriverTimeouts, "watchLiveness">;
 export interface RedisDriverOptions {
   /** The server: `secret("REDIS_URL")`, read once when the application starts, never printed. */
   readonly url: SecretRef;
-  /** What every key starts with (default `agboss:`): two applications on one server, each under its own. */
-  readonly keyPrefix?: string;
+  /**
+   * What every key starts with (default `agboss:`): two applications on one server, each under its
+   * own. A prefix, or `env("REDIS_KEY_PREFIX")` read once when the application starts, as the url is.
+   */
+  readonly keyPrefix?: string | EnvRef<string>;
   /** Start on a server that can lose an acknowledged write — the opt-out names that loss. */
   readonly durabilityOptOut?: RedisDurabilityOptOut;
   /** How long the child queue's watch may stay silent before it is re-opened (default `DEFAULT_WATCH_LIVENESS`, at least 2 s). */
   readonly timeouts?: RedisDriverTimeouts;
+}
+
+/** What the driver tells of itself: a prefix named in the code adds nothing, one read from the environment names its variable. */
+function describedOf(keyPrefix: string | EnvRef<string> | undefined): string {
+  return typeof keyPrefix === "object" ? `redis (key prefix from ${keyPrefix.variable})` : "redis";
 }
 
 /**
@@ -38,7 +46,7 @@ export function RedisDriver(options: RedisDriverOptions): ClusterDriver {
   return defineStorageDriver({
     role: StorageRole.Cluster,
     backend: "redis",
-    describes: "redis",
+    describes: describedOf(keyPrefix),
     settings: {
       kind: "redis",
       url,

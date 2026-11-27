@@ -7,6 +7,7 @@ import {
   type RateLimitLease,
   type StoreDescriptor,
 } from "@agboss/core";
+import { assertValidInstant } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
 import { RedisConnection } from "../connection/redis-connection.js";
@@ -105,6 +106,8 @@ export class RedisRateLimitRepository extends RateLimitRepository {
   }
 
   async pauseUntil(key: string, until: Date): Promise<void> {
+    // an Invalid Date is NaN in the script's arguments: refused before anything is sent
+    assertValidInstant(until, "until", "rate-limit pause");
     const left = Math.max(0, until.getTime() - this.clock.now().getTime());
     await this.#run(
       PAUSE,

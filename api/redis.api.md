@@ -14,6 +14,7 @@ import { Clock } from '@agboss/core';
 import { ClusterDriver } from '@agboss/core/stores';
 import { ClusterExecutionLeaseRepository } from '@agboss/core/stores';
 import { DriverTimeouts } from '@agboss/core/stores';
+import type { EnvRef } from '@agboss/core';
 import { ExecutionIdentity } from '@agboss/core';
 import { ExecutionIdStore } from '@agboss/core';
 import { Logger } from '@agboss/core';
@@ -123,7 +124,7 @@ export function RedisDriver(options: RedisDriverOptions): ClusterDriver;
 // @public
 export interface RedisDriverOptions {
     readonly durabilityOptOut?: RedisDurabilityOptOut;
-    readonly keyPrefix?: string;
+    readonly keyPrefix?: string | EnvRef<string>;
     readonly timeouts?: RedisDriverTimeouts;
     readonly url: SecretRef;
 }

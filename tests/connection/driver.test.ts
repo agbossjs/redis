@@ -1,4 +1,4 @@
-import { secret } from "@agboss/core";
+import { env, secret } from "@agboss/core";
 import { StorageRole } from "@agboss/core/stores";
 import { sec } from "@agboss/core/units";
 import { describe, expect, expectTypeOf, it } from "vitest";
@@ -12,6 +12,8 @@ import {
 } from "../../src/index.js";
 import { settingsOfResolved } from "../../src/connection/driver-settings.js";
 import type { NodeRedisClient } from "../../src/connection/redis-client.js";
+import { queueKeysOf } from "../../src/stores/queue/queue-rows.js";
+import { leaseKeyOf } from "../../src/stores/leases/redis-cluster-coordinator.js";
 import { revealing } from "../support/application-context.js";
 
 /**
@@ -51,6 +53,33 @@ describe("RedisDriver", () => {
       durabilityOptOut: "acknowledged-writes-may-be-lost",
       watchLiveness: 20_000,
     });
+  });
+});
+
+describe("RedisDriver key prefix from the environment", () => {
+  it("takes env(…) like the url's secret: described by its variable, carried as the reference, a name as it is", () => {
+    const driver = RedisDriver({ url: secret("REDIS_URL"), keyPrefix: env("REDIS_KEY_PREFIX") });
+
+    expect(driver.describes).toBe("redis (key prefix from REDIS_KEY_PREFIX)");
+    expect(driver.settings).toMatchObject({ kind: "redis", keyPrefix: env("REDIS_KEY_PREFIX") });
+    expect(RedisDriver({ url: secret("REDIS_URL"), keyPrefix: "app:" }).describes).toBe("redis");
+  });
+
+  it("is the name the core resolved at start that the connection builds its keys from", () => {
+    const connection = new RedisConnection(settingsOfResolved(resolved({ keyPrefix: "billing:" })));
+
+    expect(connection.keyPrefix).toBe("billing:");
+    expect(leaseKeyOf(connection.keyPrefix, "t", "e")).toBe(
+      `billing:lease:${JSON.stringify(["t", "e"])}`,
+    );
+    expect(queueKeysOf(connection.keyPrefix).byTime).toBe("billing:children-queued-by-time");
+  });
+
+  it("is refused when the environment gave an empty or unresolved one", () => {
+    expect(() => settingsOfResolved(resolved({ keyPrefix: "" }))).toThrow(/keyPrefix is empty/);
+    expect(() => settingsOfResolved(resolved({ keyPrefix: env("REDIS_KEY_PREFIX") }))).toThrow(
+      RedisSettingsError,
+    );
   });
 });
 
